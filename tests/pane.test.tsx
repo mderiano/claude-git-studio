@@ -14,16 +14,25 @@ function ran(stdout: string, exitCode = 0): ProcessRunResult {
   return { exitCode, stdout, stderr: '', isStdoutTruncated: false, isStderrTruncated: false }
 }
 
-/** A repository served from recorded git output; every git call is kept in `calls`. */
-function world(on: On): { calls: Call[]; opened: string[] } {
+/** A repository served from recorded git output; every git call is kept in `calls`, every prompt sent to Claude in `prompts`. */
+function world(on: On): { calls: Call[]; opened: string[]; prompts: string[]; descriptions: string[] } {
   const calls: Call[] = []
   const opened: string[] = []
+  const prompts: string[] = []
+  const descriptions: string[] = []
   mock.store(on)
   mock.env(on, { HOME: '/home/ada' })
   mock.clock(on)
   on('session.start', ($, e) => ({ cwd: e.cwd }))
   on('session.cwd', () => ({ value: ROOT }))
-  on('command.register', ($, e) => ({ value: { command: e.name } }))
+  on('command.register', ($, e) => {
+    descriptions.push(e.description)
+    return { value: { command: e.name } }
+  })
+  on('prompt.submit', ($, e) => {
+    prompts.push(e.text)
+    return { text: e.text }
+  })
   on('tool.register', ($, e) => ({ value: { tool: `mcp__git-studio__${e.name}` } }))
   on('fs.list', () => ({ value: [] }))
   on('fs.exists', () => ({ value: false }))
@@ -43,7 +52,7 @@ function world(on: On): { calls: Call[]; opened: string[] } {
     const hit = FIXTURES[args.join('\u0001')]
     return { value: hit ? { ...hit, isStdoutTruncated: false, isStderrTruncated: false } : ran('') }
   })
-  return { calls, opened }
+  return { calls, opened, prompts, descriptions }
 }
 
 async function mountPane($: Engine, surface: (typeof SURFACES)[number]) {
@@ -166,5 +175,76 @@ describe('Git Studio pane', () => {
     expect(opened).toContain('git-studio')
     const answer = await $.command.run({ command: 'git', args: 'remote -v', ...typed })
     expect(answer.text).toContain('origin\t../origin.git (fetch)')
+  })
+})
+
+/** What the pane draws and sends in each language, on the demo repository. */
+const SPOKEN = {
+  en: {
+    description: /^Git Studio: opens the git client/,
+    tab: 'History',
+    refresh: '⟳ Refresh',
+    staged: 'Staged (2)',
+    commitTitle: /^Commit to main/,
+    review: /^Do a code review of the staged changes/,
+    date: /<ada@example\.com> · \d{4}-\d{2}-\d{2} \d{2}:\d{2}/,
+    danger: '⚠ Delete branch feature/login?',
+    confirm: 'Confirm',
+    done: '✓ Delete branch feature/login',
+  },
+  fr: {
+    description: /^Git Studio : ouvre le client git/,
+    tab: 'Historique',
+    refresh: '⟳ Rafraîchir',
+    staged: 'Indexés (2)',
+    commitTitle: /^Commit sur main/,
+    review: /^Fais une revue de code des changements indexés/,
+    date: /<ada@example\.com> · \d{2}\/\d{2}\/\d{4} \d{2}:\d{2}/,
+    danger: '⚠ Supprimer la branche feature/login ?',
+    confirm: 'Confirmer',
+    done: '✓ Supprimer la branche feature/login',
+  },
+} as const
+
+describe('Git Studio in each language', () => {
+  for (const language of ['en', 'fr'] as const) {
+    const said = SPOKEN[language]
+    test(`the pane speaks ${language} on each surface`, { options: { language }, timeoutMs: 30_000 }, async ($, on) => {
+      const { calls, prompts, descriptions } = world(on)
+      await $.session.start({ cwd: ROOT, surface: 'terminal', isInteractive: true })
+      expect(descriptions[0]).toMatch(said.description)
+      for (const surface of SURFACES) {
+        const ui = await mountPane($, surface)
+        expect((await ui.find({ key: 'tab:log' }))?.text).toBe(surface === 'terminal' ? `2 ${said.tab}` : said.tab)
+        expect((await ui.find({ key: 'refresh' }))?.text).toBe(said.refresh)
+        await ui.press({ key: 'tab:status' })
+        expect(await ui.find({ text: said.staged })).toBeDefined()
+        expect(await ui.find({ text: said.commitTitle })).toBeDefined()
+        await ui.press({ key: 'commit-review' })
+        expect(prompts.at(-1)).toMatch(said.review)
+        await ui.press({ key: 'tab:log' })
+        await ui.press({ key: `row:${MERGE_SHA}` })
+        expect(await ui.find({ text: said.date })).toBeDefined()
+        await ui.press({ key: 'tab:branches' })
+        await ui.press({ key: 'branch-row:feature/login' })
+        await ui.press({ key: 'delete:feature/login' })
+        expect(await ui.find({ text: said.danger })).toBeDefined()
+        expect((await ui.find({ key: 'confirm-yes' }))?.text).toBe(said.confirm)
+        await ui.press({ key: 'confirm-yes' })
+        expect(lines(calls)).toContain('branch -d feature/login')
+        expect(await ui.find({ text: said.done })).toBeDefined()
+        await ui.press({ key: 'banner-close' })
+        await ui.unmount()
+      }
+    })
+  }
+
+  test('with no language set, the pane is in English', { timeoutMs: 20_000 }, async ($, on) => {
+    world(on)
+    for (const surface of SURFACES) {
+      const ui = await mountPane($, surface)
+      expect((await ui.find({ key: 'refresh' }))?.text).toBe(SPOKEN.en.refresh)
+      await ui.unmount()
+    }
   })
 })

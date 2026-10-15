@@ -1,36 +1,27 @@
 import type { RenderElement } from 'claude-code'
 
-import type { GsOperation, GsView } from '../types'
+import type { GsView } from '../types'
 import { clearDrafts, draft } from './drafts'
 import { quoteArg } from './git'
 import { logView, reflogView } from './history'
-import { bar, block, button, field, line, note, plural, section } from './kit'
+import { bar, block, button, field, line, note, section } from './kit'
 import type { Ctx, Node } from './kit'
 import * as ops from './ops'
 import { consoleView, remotesView, stashView, worktreesView } from './places'
 import { branchesView, tagsView } from './refs'
 import { pushStepForHead, statusView } from './status'
 
-const TABS: { view: GsView; label: string; hotkey: string }[] = [
-  { view: 'status', label: 'Statut', hotkey: '1' },
-  { view: 'log', label: 'Historique', hotkey: '2' },
-  { view: 'branches', label: 'Branches', hotkey: '3' },
-  { view: 'tags', label: 'Tags', hotkey: '4' },
-  { view: 'worktrees', label: 'Worktrees', hotkey: '5' },
-  { view: 'stash', label: 'Stash', hotkey: '6' },
-  { view: 'remotes', label: 'Remotes', hotkey: '7' },
-  { view: 'reflog', label: 'Reflog', hotkey: '8' },
-  { view: 'console', label: 'Console', hotkey: '9' },
+const TABS: { view: GsView; hotkey: string }[] = [
+  { view: 'status', hotkey: '1' },
+  { view: 'log', hotkey: '2' },
+  { view: 'branches', hotkey: '3' },
+  { view: 'tags', hotkey: '4' },
+  { view: 'worktrees', hotkey: '5' },
+  { view: 'stash', hotkey: '6' },
+  { view: 'remotes', hotkey: '7' },
+  { view: 'reflog', hotkey: '8' },
+  { view: 'console', hotkey: '9' },
 ]
-
-const OPERATION_LABEL: Record<GsOperation, string> = {
-  merge: 'Merge en cours',
-  rebase: 'Rebase en cours',
-  am: 'git am en cours',
-  'cherry-pick': 'Cherry-pick en cours',
-  revert: 'Revert en cours',
-  bisect: 'Bisect en cours',
-}
 
 export function paneTree(ctx: Ctx, isFocused: boolean): RenderElement {
   const { Box, Text } = ctx.ui
@@ -51,7 +42,7 @@ export function paneTree(ctx: Ctx, isFocused: boolean): RenderElement {
       </Box>
       {ctx.surface === 'terminal' && isFocused ? (
         <Box marginTop={1}>
-          <Text dimColor>Tab/flèches : se déplacer · Entrée : activer · 1-9 : onglets · r : rafraîchir · Échap : revenir au prompt</Text>
+          <Text dimColor>{ctx.t.pane.keys}</Text>
         </Box>
       ) : null}
     </Box>
@@ -86,9 +77,10 @@ function body(ctx: Ctx): Node {
 function header(ctx: Ctx): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const head = ctx.snap.head
   const where = head?.root ?? ctx.snap.cwd
-  const branch = head === null ? null : (head.branch ?? `HEAD détachée @ ${head.oid?.slice(0, 7) ?? '∅'}`)
+  const branch = head === null ? null : (head.branch ?? t.pane.detached(head.oid?.slice(0, 7) ?? '∅'))
   const pushStep = pushStepForHead(ctx)
   return (
     <Box flexDirection="column">
@@ -106,17 +98,17 @@ function header(ctx: Ctx): Node {
         </Text>
       ) : null}
       {bar(ctx, [
-        button(ctx, 'refresh', '⟳ Rafraîchir', () => cmd.refresh(), { hotkey: 'r', dim: true }),
-        head ? button(ctx, 'fetch', '⇣ Fetch', () => cmd.act(ops.fetch(null)), { hotkey: 'f', dim: true }) : null,
-        head?.branch && head.upstream ? button(ctx, 'pull', '↓ Pull', () => cmd.act(ops.pull('default')), { hotkey: 'p', dim: true }) : null,
+        button(ctx, 'refresh', t.pane.refresh, () => cmd.refresh(), { hotkey: 'r', dim: true }),
+        head ? button(ctx, 'fetch', t.pane.fetch, () => cmd.act(ops.fetch(t, null)), { hotkey: 'f', dim: true }) : null,
+        head?.branch && head.upstream ? button(ctx, 'pull', t.pane.pull, () => cmd.act(ops.pull(t, 'default')), { hotkey: 'p', dim: true }) : null,
         pushStep
-          ? button(ctx, 'push', head?.ahead ? `↑ Push (${head.ahead})` : '↑ Push', () => cmd.act({ title: `Push de ${head?.branch ?? 'HEAD'}`, steps: [pushStep], network: true }), {
+          ? button(ctx, 'push', t.pane.push(head?.ahead ?? 0), () => cmd.act(ops.pushHead(t, pushStep, head?.branch ?? null)), {
               hotkey: 'u',
               dim: true,
             })
           : null,
-        button(ctx, 'repo-switch', '⇄ Dépôt…', () => cmd.toggleExpanded('repo-switch'), { dim: true }),
-        button(ctx, 'close', 'Fermer', () => cmd.close(), { dim: true, dismiss: true }),
+        button(ctx, 'repo-switch', t.pane.repo, () => cmd.toggleExpanded('repo-switch'), { dim: true }),
+        button(ctx, 'close', t.pane.close, () => cmd.close(), { dim: true, dismiss: true }),
       ])}
     </Box>
   )
@@ -133,7 +125,7 @@ function tabs(ctx: Ctx): Node {
     ctx,
     TABS.map(tab => {
       const count = counts[tab.view] ?? 0
-      const label = `${isTerminal ? `${tab.hotkey} ` : ''}${tab.label}${count > 0 ? ` (${count})` : ''}`
+      const label = `${isTerminal ? `${tab.hotkey} ` : ''}${ctx.t.pane.tabs[tab.view]}${count > 0 ? ` (${count})` : ''}`
       const isActive = ctx.nav.view === tab.view
       return button(ctx, `tab:${tab.view}`, label, () => cmd.showView(tab.view), { hotkey: tab.hotkey, primary: isActive, dim: !isActive })
     }),
@@ -152,8 +144,8 @@ function confirmBar(ctx: Ctx): Node {
       </Text>
       <Text dimColor>{block(op.steps.map(step => `$ git ${step.args.map(quoteArg).join(' ')}`).join('\n'))}</Text>
       {bar(ctx, [
-        button(ctx, 'confirm-yes', 'Confirmer', () => cmd.act(op, true), { primary: true }),
-        button(ctx, 'confirm-no', 'Annuler', () => cmd.dismissConfirm()),
+        button(ctx, 'confirm-yes', ctx.t.pane.confirm, () => cmd.act(op, true), { primary: true }),
+        button(ctx, 'confirm-no', ctx.t.pane.cancel, () => cmd.dismissConfirm()),
       ])}
     </Box>
   )
@@ -162,6 +154,7 @@ function confirmBar(ctx: Ctx): Node {
 function operationBar(ctx: Ctx): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const operation = ctx.snap.head?.operation ?? null
   if (operation === null) return null
   const conflicts = ctx.snap.status.filter(entry => entry.kind === 'conflict')
@@ -169,38 +162,35 @@ function operationBar(ctx: Ctx): Node {
     operation === 'bisect'
       ? ''
       : conflicts.length > 0
-        ? ` — ${plural(conflicts.length, 'conflit')} à résoudre`
-        : ' — aucun conflit restant, prêt à continuer'
+        ? t.pane.conflictsLeft(conflicts.length)
+        : t.pane.readyToContinue
   return (
     <Box flexDirection="column" borderStyle="round" borderColor="error" paddingX={1} marginTop={1}>
       <Text color="warning" bold>
-        ⚠ {OPERATION_LABEL[operation]}
+        ⚠ {t.pane.operations[operation]}
         {state}
       </Text>
       {operation === 'bisect'
         ? bar(ctx, [
-            button(ctx, 'bisect-good', 'HEAD est bon', () => cmd.act(ops.bisectMark('good', null, true)), { primary: true }),
-            button(ctx, 'bisect-bad', 'HEAD est mauvais', () => cmd.act(ops.bisectMark('bad', null, true))),
-            button(ctx, 'bisect-skip', 'Passer', () => cmd.act(ops.skipOperation('bisect'))),
-            button(ctx, 'bisect-log', 'Journal', async () => {
+            button(ctx, 'bisect-good', t.pane.headGood, () => cmd.act(ops.bisectMark(t, 'good', null, true)), { primary: true }),
+            button(ctx, 'bisect-bad', t.pane.headBad, () => cmd.act(ops.bisectMark(t, 'bad', null, true))),
+            button(ctx, 'bisect-skip', t.pane.skip, () => cmd.act(ops.skipOperation(t, 'bisect'))),
+            button(ctx, 'bisect-log', t.pane.bisectLog, async () => {
               await cmd.runConsole('bisect log')
               await cmd.showView('console')
             }),
-            button(ctx, 'bisect-reset', 'Terminer', () => cmd.act(ops.abortOperation('bisect')), { dim: true }),
+            button(ctx, 'bisect-reset', t.pane.endBisect, () => cmd.act(ops.abortOperation(t, 'bisect')), { dim: true }),
           ])
         : bar(ctx, [
-            button(ctx, 'op-continue', 'Continuer', () => cmd.act(ops.continueOperation(operation)), { primary: conflicts.length === 0 }),
-            operation === 'merge' ? null : button(ctx, 'op-skip', 'Passer ce commit', () => cmd.act(ops.skipOperation(operation))),
-            button(ctx, 'op-abort', 'Abandonner', () => cmd.act(ops.abortOperation(operation)), { dim: true }),
+            button(ctx, 'op-continue', t.pane.continue, () => cmd.act(ops.continueOperation(t, operation)), { primary: conflicts.length === 0 }),
+            operation === 'merge' ? null : button(ctx, 'op-skip', t.pane.skipCommit, () => cmd.act(ops.skipOperation(t, operation))),
+            button(ctx, 'op-abort', t.pane.abort, () => cmd.act(ops.abortOperation(t, operation)), { dim: true }),
             conflicts.length > 0
-              ? button(ctx, 'op-claude', 'Résoudre avec Claude', () =>
-                  cmd.askClaude(`Un ${operation} est en cours dans ${ctx.snap.head?.root ?? 'ce dépôt'} avec des conflits (${conflicts
-                      .map(entry => entry.path)
-                      .join(', ')}). Résous-les en expliquant tes choix et marque-les résolus avec git add, sans lancer --continue.`,
-                  ),
+              ? button(ctx, 'op-claude', t.common.resolveWithClaude, () =>
+                  cmd.askClaude(t.claude.resolveOperation(operation, ctx.snap.head?.root, conflicts.map(entry => entry.path))),
                 )
               : null,
-            conflicts.length > 0 && ctx.nav.view !== 'status' ? button(ctx, 'op-status', 'Voir les conflits', () => cmd.showView('status'), { dim: true }) : null,
+            conflicts.length > 0 && ctx.nav.view !== 'status' ? button(ctx, 'op-status', t.pane.showConflicts, () => cmd.showView('status'), { dim: true }) : null,
           ])}
     </Box>
   )
@@ -240,10 +230,11 @@ async function expandHome(ctx: Ctx, path: string): Promise<string> {
 function repoPicker(ctx: Ctx): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const open = async (value: string): Promise<void> => {
     const path = value.trim()
     if (path === '') {
-      await cmd.inform('Indiquez le chemin du dépôt.', 'error')
+      await cmd.inform(t.pane.repoPathMissing, 'error')
       return
     }
     clearDrafts('repo-path')
@@ -253,19 +244,19 @@ function repoPicker(ctx: Ctx): Node {
   return (
     <Box flexDirection="column">
       {bar(ctx, [
-        field(ctx, 'repo-path', { label: 'Ouvrir le dépôt', placeholder: '~/code/projet', submitLabel: 'ouvrir', onSubmit: value => open(value) }),
-        button(ctx, 'repo-open', 'Ouvrir', () => open(draft('repo-path'))),
-        ctx.nav.repoPath !== null ? button(ctx, 'repo-session', 'Revenir au dossier de la session', () => cmd.useRepo(null), { dim: true }) : null,
+        field(ctx, 'repo-path', { label: t.pane.openRepo, placeholder: t.pane.repoPlaceholder, submitLabel: t.pane.openSubmit, onSubmit: value => open(value) }),
+        button(ctx, 'repo-open', t.pane.open, () => open(draft('repo-path'))),
+        ctx.nav.repoPath !== null ? button(ctx, 'repo-session', t.pane.backToSession, () => cmd.useRepo(null), { dim: true }) : null,
       ])}
       {ctx.recent.length > 0
         ? bar(ctx, [
-            <Text dimColor>Récents :</Text>,
+            <Text dimColor>{t.pane.recent}</Text>,
             ...ctx.recent.map(path => button(ctx, `recent:${path}`, baseName(path), () => cmd.useRepo(path), { dim: true })),
           ])
         : null}
       {worktrees.length > 0
         ? bar(ctx, [
-            <Text dimColor>Worktrees :</Text>,
+            <Text dimColor>{t.pane.worktrees}</Text>,
             ...worktrees.map(worktree => button(ctx, `switch-wt:${worktree.path}`, baseName(worktree.path), () => cmd.useRepo(worktree.path), { dim: true })),
           ])
         : null}
@@ -276,15 +267,16 @@ function repoPicker(ctx: Ctx): Node {
 function noRepo(ctx: Ctx): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
-  if (ctx.snap.cwd === '') return note(ctx, 'Chargement…')
+  const t = ctx.t
+  if (ctx.snap.cwd === '') return note(ctx, t.pane.loading)
   const clone = async (): Promise<void> => {
     const url = draft('clone-url').trim()
     if (url === '') {
-      await cmd.inform("Indiquez l'URL à cloner.", 'error')
+      await cmd.inform(t.pane.cloneUrlMissing, 'error')
       return
     }
-    const dest = draft('clone-dest').trim() || (baseName(url).replace(/\.git$/, '') || 'depot')
-    if (await cmd.act(ops.clone(url, dest))) {
+    const dest = draft('clone-dest').trim() || (baseName(url).replace(/\.git$/, '') || t.pane.cloneFolder)
+    if (await cmd.act(ops.clone(t, url, dest))) {
       clearDrafts('clone-url', 'clone-dest')
       const base = await cmd.workDir()
       await cmd.useRepo(dest.startsWith('/') ? dest : `${base.replace(/\/+$/, '')}/${dest}`)
@@ -292,16 +284,16 @@ function noRepo(ctx: Ctx): Node {
   }
   return (
     <Box flexDirection="column">
-      <Text color="warning">{line(ctx.snap.error ?? "Ce dossier n'est pas un dépôt git.")}</Text>
+      <Text color="warning">{line(ctx.snap.error ?? t.common.notARepo)}</Text>
       <Text dimColor>{line(ctx.snap.cwd)}</Text>
-      {section(ctx, 'Ouvrir un dépôt existant')}
+      {section(ctx, t.pane.openExisting)}
       {repoPicker(ctx)}
-      {section(ctx, 'Ou créer un dépôt ici')}
-      {bar(ctx, [button(ctx, 'init', 'git init', () => cmd.act(ops.init()), { primary: true })])}
+      {section(ctx, t.pane.createHere)}
+      {bar(ctx, [button(ctx, 'init', 'git init', () => cmd.act(ops.init(t)), { primary: true })])}
       {bar(ctx, [
-        field(ctx, 'clone-url', { label: 'Cloner', placeholder: 'https://github.com/org/projet.git', submitLabel: 'cloner', onSubmit: () => clone() }),
-        field(ctx, 'clone-dest', { placeholder: 'dossier (optionnel)', submitLabel: 'cloner', onSubmit: () => clone() }),
-        button(ctx, 'clone', 'Cloner', () => clone()),
+        field(ctx, 'clone-url', { label: t.pane.clone, placeholder: t.pane.clonePlaceholder, submitLabel: t.pane.cloneSubmit, onSubmit: () => clone() }),
+        field(ctx, 'clone-dest', { placeholder: t.pane.cloneDest, submitLabel: t.pane.cloneSubmit, onSubmit: () => clone() }),
+        button(ctx, 'clone', t.pane.clone, () => clone()),
       ])}
     </Box>
   )

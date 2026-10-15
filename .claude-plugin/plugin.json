@@ -1,8 +1,20 @@
 {
   "name": "git-studio",
-  "version": "0.1.0",
-  "description": "Client git complet dans un panneau Claude Code : graphe des commits, statut et staging par hunk, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick, console git.",
+  "version": "0.2.0",
+  "description": "A complete git client in a Claude Code pane: commit graph, status with hunk staging, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick and a git console, in English or French.",
   "types": "./types/index.d.ts",
+  "userConfig": {
+    "language": {
+      "type": "string",
+      "title": "Language / Langue",
+      "description": "Language of the Git Studio pane: en (English) or fr (français).",
+      "default": "en",
+      "options": [
+        "fr",
+        "en"
+      ]
+    }
+  },
   "author": {
     "name": "Mathieu Deriano"
   },

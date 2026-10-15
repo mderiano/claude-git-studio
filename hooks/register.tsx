@@ -39,6 +39,8 @@ import {
   splitArgs,
 } from './git'
 import type { Git, GitRunOptions } from './git'
+import { en, messagesFor } from './i18n'
+import type { Messages } from './i18n'
 import { uiOf } from './kit'
 import type { Actions, Ctx } from './kit'
 import { DEFAULT_LOG, DEFAULT_NAV, EMPTY_DETAIL, EMPTY_SNAP, NEEDS, PANE, VIEWS, VIEW_ALIASES, clip, isView, withDefaults } from './model'
@@ -56,6 +58,9 @@ const consoleAtom = atom({ plugin: 'git-studio', key: 'console' } as const, [])
 
 const DIFF_LIMIT = 40_000
 const OUTPUT_LIMIT = 6_000
+
+/** The strings of the `language` option, set by `register`: a change of option loads the module again. */
+let t: Messages = en
 
 // git
 
@@ -115,7 +120,7 @@ type Base = { error: string | null; head: GsHead | null; status: GsStatusEntry[]
 async function loadBase($: $, dir: string): Promise<Base> {
   const where = await gitIn($, dir)(['rev-parse', '--path-format=absolute', '--show-toplevel', '--absolute-git-dir', '--git-common-dir'])
   if (where.code !== 0) {
-    return { error: where.err.trim() || "Ce dossier n'est pas un dépôt git.", head: null, status: [] }
+    return { error: where.err.trim() || t.common.notARepo, head: null, status: [] }
   }
   const [root = dir, gitDir = '', commonDir = ''] = where.out.trim().split('\n')
   const [status, names] = await Promise.all([
@@ -191,7 +196,7 @@ let lastStatus: string | undefined
 function showStatusLine($: $, head: GsHead | null, status: readonly GsStatusEntry[]): void {
   let text: string | undefined
   if (head) {
-    const parts = [`⎇ ${head.branch ?? `HEAD détachée ${head.oid?.slice(0, 7) ?? ''}`.trim()}`]
+    const parts = [`⎇ ${head.branch ?? t.engine.statusDetached(head.oid?.slice(0, 7) ?? '').trim()}`]
     if (head.ahead > 0) parts.push(`↑${head.ahead}`)
     if (head.behind > 0) parts.push(`↓${head.behind}`)
     if (status.length > 0) parts.push(`●${status.length}`)
@@ -295,7 +300,7 @@ async function act($: $, op: GsOp, isConfirmed = false): Promise<boolean | null>
 
 async function execute($: $, op: GsOp): Promise<boolean> {
   if (running) {
-    $.ui.toast('Une opération git est déjà en cours.')
+    $.ui.toast(t.engine.busy)
     return false
   }
   running = true
@@ -319,7 +324,7 @@ async function execute($: $, op: GsOp): Promise<boolean> {
     const at = Date.now()
     await update($, bannerAtom, () => ({
       kind: isOk ? 'ok' : 'error',
-      title: isOk ? op.title : `Échec : ${op.title}`,
+      title: isOk ? op.title : t.engine.failed(op.title),
       output: clip(lines.join('\n\n'), OUTPUT_LIMIT).text,
       at,
     }))
@@ -437,7 +442,7 @@ async function loadCommit($: $, sha: string): Promise<void> {
   const shown = await git(['show', '-s', SHOW_FORMAT, sha])
   const meta = parseShow(shown.out)
   if (meta === null) {
-    await inform($, `Commit introuvable : ${output(shown) || sha}`, 'error')
+    await inform($, t.engine.commitNotFound(output(shown) || sha), 'error')
     return
   }
   const range = meta.parents.length > 1 ? [`${sha}^1`, sha] : null
@@ -511,11 +516,11 @@ async function suggestCommitMessage($: $): Promise<void> {
   const git = await repoGit($)
   const staged = await git(['diff', '--cached', '--no-ext-diff', '--stat', '-p', '-M'])
   if (staged.out.trim() === '') {
-    await inform($, "Rien n'est indexé : indexez d'abord les changements à commiter.", 'error')
+    await inform($, t.claude.nothingStaged, 'error')
     return
   }
   const recent = await git(['log', '-n12', '--format=%s'])
-  await update($, busyAtom, () => 'Claude rédige le message de commit')
+  await update($, busyAtom, () => t.claude.writing)
   try {
     const result = await $.model.complete({
       model: 'haiku',
@@ -538,7 +543,7 @@ async function suggestCommitMessage($: $): Promise<void> {
       setDraft('commit-body', toFieldText(rest.join('\n').trim()))
       $.ui.invalidate('ui.render')
     } else {
-      await inform($, `Claude n'a pas pu rédiger le message (${result.reason}).`, 'error')
+      await inform($, t.claude.couldNotWrite(result.reason), 'error')
     }
   } finally {
     await update($, busyAtom, () => null)
@@ -570,7 +575,7 @@ async function runOnce($: $, line: string): Promise<string> {
   const ran = await (await repoGit($))(args, { timeoutMs: 600_000 })
   const text = clip(output(ran), 30_000)
   void refresh($)
-  return `$ git ${args.map(quoteArg).join(' ')}\n${text.text}${text.truncated ? '\n… (sortie tronquée)' : ''}${ran.code === 0 ? '' : `\n(code de sortie ${ran.code})`}`
+  return `$ git ${args.map(quoteArg).join(' ')}\n${text.text}${text.truncated ? `\n${t.engine.truncated}` : ''}${ran.code === 0 ? '' : `\n${t.engine.exitCode(ran.code)}`}`
 }
 
 // Pane
@@ -618,18 +623,20 @@ function actionsFor($: $): Actions {
     },
     copy: async text => {
       const copied = await $.ui.copy({ text })
-      if (!copied.isCopied) await inform($, `Copie impossible ici : ${text}`)
+      if (!copied.isCopied) await inform($, t.engine.copyFailed(text))
     },
     close: () => $.ui.close({ id: PANE }),
   }
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  t = messagesFor(options.language)
+
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: 'git',
-      description: 'Git Studio : ouvre le client git (graphe, branches, tags, worktrees, stash…) ou lance « /git <commande> »',
-      argumentHint: '[status|log|branches|tags|worktrees|stash|remotes|reflog|console] ou [commande git]',
+      description: t.engine.commandDescription,
+      argumentHint: t.engine.commandHint,
       immediate: true,
     })
     await $.tool.register({
@@ -654,7 +661,7 @@ export const register: Register = on => {
     const view = args === '' ? undefined : VIEW_ALIASES[args.toLowerCase()]
     if (args === '' || view !== undefined) {
       const opened = await openPane($, view)
-      return opened.isPlaced ? {} : { text: `Git Studio est ouvert mais attend de la place pour s'afficher : ${opened.reason}` }
+      return opened.isPlaced ? {} : { text: t.engine.waitingForRoom(opened.reason) }
     }
     return { text: await runOnce($, args) }
   })
@@ -666,12 +673,12 @@ export const register: Register = on => {
     if (ref !== '') {
       const resolved = await gitIn($, await workDir($))(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])
       const sha = resolved.out.trim()
-      if (resolved.code !== 0 || sha === '') return { result: `Git Studio est ouvert, mais « ${ref} » ne désigne aucun commit.` }
+      if (resolved.code !== 0 || sha === '') return { result: t.engine.openNoCommit(ref) }
       await jumpToCommit($, sha)
-      return { result: `Git Studio est ouvert sur le commit ${sha.slice(0, 7)}.` }
+      return { result: t.engine.openOnCommit(sha.slice(0, 7)) }
     }
-    return { result: opened.isPlaced ? `Git Studio est ouvert sur la vue ${view}.` : `Git Studio est ouvert (${opened.reason}).` }
-  }).catch(() => ({ result: "Git Studio n'a pas pu s'ouvrir : l'utilisateur peut taper /git." }))
+    return { result: opened.isPlaced ? t.engine.openOnView(view) : t.engine.openWaiting(opened.reason) }
+  }).catch(() => ({ result: t.engine.openFailed }))
 
   on('turn.complete', async ($, e, next) => {
     const done = await next(e)
@@ -694,6 +701,7 @@ export const register: Register = on => {
     const ctx: Ctx = {
       cmd: actionsFor($),
       ui: uiOf($.ui.resolve(e)),
+      t,
       width: Math.max(40, e.props.bodyColumns - 1),
       surface: e.surface,
       nav: withDefaults(nav),

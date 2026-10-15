@@ -21,6 +21,7 @@ async function showHistoryOf(ctx: Ctx, ref: string): Promise<void> {
 export function branchesView(ctx: Ctx): Node {
   const { Box } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const locals = ctx.snap.branches.filter(branch => !branch.remote)
   const remoteBranches = ctx.snap.branches.filter(branch => branch.remote)
   const current = ctx.snap.head?.branch ?? null
@@ -32,27 +33,27 @@ export function branchesView(ctx: Ctx): Node {
   const create = async (checkout: boolean): Promise<void> => {
     const name = draft('new-branch').trim()
     if (name === '') {
-      await cmd.inform('Donnez un nom à la nouvelle branche.', 'error')
+      await cmd.inform(t.common.nameNewBranch, 'error')
       return
     }
-    if (await cmd.act(ops.createBranch(name, picked(ctx, 'new-branch-base', bases), checkout))) clearDrafts('new-branch')
+    if (await cmd.act(ops.createBranch(t, name, picked(ctx, 'new-branch-base', bases), checkout))) clearDrafts('new-branch')
   }
 
   return (
     <Box flexDirection="column">
       {bar(ctx, [
-        field(ctx, 'new-branch', { label: 'Nouvelle branche', placeholder: 'feature/ma-branche', submitLabel: 'créer', onSubmit: () => create(false) }),
-        choice(ctx, 'new-branch-base', bases, { label: 'depuis' }),
-        button(ctx, 'new-branch-create', 'Créer', () => create(false)),
-        button(ctx, 'new-branch-switch', 'Créer et basculer', () => create(true), { primary: true }),
+        field(ctx, 'new-branch', { label: t.common.newBranch, placeholder: t.branches.branchPlaceholder, submitLabel: t.common.createSubmit, onSubmit: () => create(false) }),
+        choice(ctx, 'new-branch-base', bases, { label: t.branches.from }),
+        button(ctx, 'new-branch-create', t.common.create, () => create(false)),
+        button(ctx, 'new-branch-switch', t.common.createAndSwitch, () => create(true), { primary: true }),
       ])}
-      {section(ctx, `Locales (${locals.length})`)}
-      {locals.length === 0 ? note(ctx, 'Aucune branche locale (dépôt sans commit ?).') : null}
+      {section(ctx, t.branches.local(locals.length))}
+      {locals.length === 0 ? note(ctx, t.branches.noLocal) : null}
       {locals.map(branch => localRow(ctx, branch))}
-      {section(ctx, `Distantes (${remoteBranches.length})`, [
-        button(ctx, 'fetch-all-branches', 'Fetch tout', () => cmd.act(ops.fetch(null)), { dim: true }),
+      {section(ctx, t.branches.remote(remoteBranches.length), [
+        button(ctx, 'fetch-all-branches', t.common.fetchAll, () => cmd.act(ops.fetch(t, null)), { dim: true }),
       ])}
-      {remoteBranches.length === 0 ? note(ctx, 'Aucune branche distante connue.') : null}
+      {remoteBranches.length === 0 ? note(ctx, t.branches.noRemote) : null}
       {remoteBranches.map(branch => remoteRow(ctx, branch))}
     </Box>
   )
@@ -60,7 +61,7 @@ export function branchesView(ctx: Ctx): Node {
 
 function branchLabel(ctx: Ctx, branch: GsBranch, isOpen: boolean): Node[] {
   const { Text } = ctx.ui
-  const track = branch.upstream === null ? '' : ` → ${branch.upstream}${branch.gone ? ' (supprimée)' : ''}`
+  const track = branch.upstream === null ? '' : ` → ${branch.upstream}${branch.gone ? ctx.t.branches.gone : ''}`
   const fixed = branch.name.length + track.length + 12
   return [
     isOpen ? '▾ ' : '▸ ',
@@ -71,7 +72,7 @@ function branchLabel(ctx: Ctx, branch: GsBranch, isOpen: boolean): Node[] {
     branch.ahead > 0 ? <Text color="success"> ↑{branch.ahead}</Text> : '',
     branch.behind > 0 ? <Text color="warning"> ↓{branch.behind}</Text> : '',
     <Text dimColor>
-      {line(track)} · {cut(line(branch.subject), Math.max(10, ctx.width - fixed - 12))} · {ago(branch.time)}
+      {line(track)} · {cut(line(branch.subject), Math.max(10, ctx.width - fixed - 12))} · {ago(ctx.t, branch.time)}
     </Text>,
   ]
 }
@@ -97,6 +98,7 @@ function localRow(ctx: Ctx, branch: GsBranch): Node {
 function localActions(ctx: Ctx, branch: GsBranch): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const head = ctx.snap.head
   const current = head?.branch ?? null
   const remoteNames = ctx.snap.remotes.map(remote => remote.name)
@@ -109,67 +111,67 @@ function localActions(ctx: Ctx, branch: GsBranch): Node {
   const rename = async (): Promise<void> => {
     const to = draft(`rename:${branch.name}`).trim()
     if (to === '' || to === branch.name) {
-      await cmd.inform('Donnez le nouveau nom de la branche.', 'error')
+      await cmd.inform(t.branches.newNameMissing, 'error')
       return
     }
-    if (await cmd.act(ops.renameBranch(branch.name, to))) clearDrafts(`rename:${branch.name}`)
+    if (await cmd.act(ops.renameBranch(t, branch.name, to))) clearDrafts(`rename:${branch.name}`)
   }
 
   return (
     <Box flexDirection="column">
       {elsewhere !== null
         ? bar(ctx, [
-            <Text color="permission">Extraite dans le worktree {line(elsewhere)}</Text>,
-            button(ctx, `open-wt:${branch.name}`, 'Ouvrir ce worktree ici', () => cmd.useRepo(elsewhere), { dim: true }),
+            <Text color="permission">{t.branches.checkedOutIn(line(elsewhere))}</Text>,
+            button(ctx, `open-wt:${branch.name}`, t.branches.openWorktree, () => cmd.useRepo(elsewhere), { dim: true }),
           ])
         : null}
       {branch.isHead
         ? bar(ctx, [
-            button(ctx, `pull:${branch.name}`, 'Pull', () => cmd.act(ops.pull('default')), { primary: true }),
-            button(ctx, `pull-rebase:${branch.name}`, 'Pull --rebase', () => cmd.act(ops.pull('rebase'))),
-            button(ctx, `pull-ff:${branch.name}`, 'Pull --ff-only', () => cmd.act(ops.pull('ff-only'))),
+            button(ctx, `pull:${branch.name}`, t.common.pull, () => cmd.act(ops.pull(t, 'default')), { primary: true }),
+            button(ctx, `pull-rebase:${branch.name}`, 'Pull --rebase', () => cmd.act(ops.pull(t, 'rebase'))),
+            button(ctx, `pull-ff:${branch.name}`, 'Pull --ff-only', () => cmd.act(ops.pull(t, 'ff-only'))),
           ])
         : bar(ctx, [
-            elsewhere === null ? button(ctx, `switch:${branch.name}`, 'Basculer', () => cmd.act(ops.switchBranch(branch.name)), { primary: true }) : null,
-            current !== null ? button(ctx, `merge:${branch.name}`, `Merge dans ${current}`, () => cmd.act(ops.merge(branch.name, 'ff', current))) : null,
-            current !== null ? button(ctx, `merge-noff:${branch.name}`, '--no-ff', () => cmd.act(ops.merge(branch.name, 'no-ff', current)), { dim: true }) : null,
-            current !== null ? button(ctx, `merge-squash:${branch.name}`, '--squash', () => cmd.act(ops.merge(branch.name, 'squash', current)), { dim: true }) : null,
-            current !== null ? button(ctx, `rebase-onto:${branch.name}`, `Rebase ${current} dessus`, () => cmd.act(ops.rebase(branch.name, current))) : null,
+            elsewhere === null ? button(ctx, `switch:${branch.name}`, t.branches.switch, () => cmd.act(ops.switchBranch(t, branch.name)), { primary: true }) : null,
+            current !== null ? button(ctx, `merge:${branch.name}`, t.common.mergeInto(current), () => cmd.act(ops.merge(t, branch.name, 'ff', current))) : null,
+            current !== null ? button(ctx, `merge-noff:${branch.name}`, '--no-ff', () => cmd.act(ops.merge(t, branch.name, 'no-ff', current)), { dim: true }) : null,
+            current !== null ? button(ctx, `merge-squash:${branch.name}`, '--squash', () => cmd.act(ops.merge(t, branch.name, 'squash', current)), { dim: true }) : null,
+            current !== null ? button(ctx, `rebase-onto:${branch.name}`, t.common.rebaseOnto(current), () => cmd.act(ops.rebase(t, branch.name, current))) : null,
             upstream !== null && elsewhere === null
-              ? button(ctx, `ff:${branch.name}`, `Mettre à jour depuis ${branch.upstream}`, () => cmd.act(ops.fastForward(branch.name, upstream[0], upstream[1])))
+              ? button(ctx, `ff:${branch.name}`, t.branches.updateFrom(branch.upstream ?? ''), () => cmd.act(ops.fastForward(t, branch.name, upstream[0], upstream[1])))
               : null,
           ])}
       {bar(ctx, [
         pushRemote !== null
-          ? button(ctx, `push:${branch.name}`, `Push vers ${pushRemote}`, () =>
-              cmd.act(ops.push(pushRemote, branch.name, { setUpstream: branch.upstream === null })),
+          ? button(ctx, `push:${branch.name}`, t.branches.pushTo(pushRemote), () =>
+              cmd.act(ops.push(t, pushRemote, branch.name, { setUpstream: branch.upstream === null })),
             )
           : null,
         pushRemote !== null
-          ? button(ctx, `push-force:${branch.name}`, 'Push forcé', () => cmd.act(ops.push(pushRemote, branch.name, { force: true })), { dim: true })
+          ? button(ctx, `push-force:${branch.name}`, t.branches.forcePush, () => cmd.act(ops.push(t, pushRemote, branch.name, { force: true })), { dim: true })
           : null,
-        button(ctx, `log:${branch.name}`, 'Historique', () => showHistoryOf(ctx, branch.name), { dim: true }),
-        button(ctx, `tip:${branch.name}`, `Dernier commit ${short(branch.sha)}`, () => cmd.jumpToCommit(branch.sha), { dim: true }),
+        button(ctx, `log:${branch.name}`, t.common.history, () => showHistoryOf(ctx, branch.name), { dim: true }),
+        button(ctx, `tip:${branch.name}`, t.common.lastCommit(short(branch.sha)), () => cmd.jumpToCommit(branch.sha), { dim: true }),
       ])}
       {bar(ctx, [
-        field(ctx, `rename:${branch.name}`, { label: 'Renommer', placeholder: branch.name, submitLabel: 'renommer', onSubmit: () => rename() }),
-        button(ctx, `rename-go:${branch.name}`, 'Renommer', () => rename(), { dim: true }),
+        field(ctx, `rename:${branch.name}`, { label: t.common.rename, placeholder: branch.name, submitLabel: t.common.renameSubmit, onSubmit: () => rename() }),
+        button(ctx, `rename-go:${branch.name}`, t.common.rename, () => rename(), { dim: true }),
       ])}
       {remoteChoices.length > 0
         ? bar(ctx, [
-            choice(ctx, `upstream:${branch.name}`, [{ value: '', label: '(aucun)' }, ...remoteChoices], {
-              label: 'Upstream',
+            choice(ctx, `upstream:${branch.name}`, [{ value: '', label: t.branches.none }, ...remoteChoices], {
+              label: t.branches.upstream,
               value: branch.upstream ?? '',
               onSelect: value =>
-                value === '' ? (branch.upstream === null ? undefined : cmd.act(ops.unsetUpstream(branch.name))) : cmd.act(ops.setUpstream(branch.name, value)),
+                value === '' ? (branch.upstream === null ? undefined : cmd.act(ops.unsetUpstream(t, branch.name))) : cmd.act(ops.setUpstream(t, branch.name, value)),
             }),
           ])
         : null}
       {branch.isHead
         ? null
         : bar(ctx, [
-            button(ctx, `delete:${branch.name}`, 'Supprimer', () => cmd.act(ops.deleteBranch(branch.name, false)), { dim: true }),
-            button(ctx, `delete-force:${branch.name}`, 'Forcer la suppression', () => cmd.act(ops.deleteBranch(branch.name, true)), { dim: true }),
+            button(ctx, `delete:${branch.name}`, t.common.delete, () => cmd.act(ops.deleteBranch(t, branch.name, false)), { dim: true }),
+            button(ctx, `delete-force:${branch.name}`, t.common.forceDelete, () => cmd.act(ops.deleteBranch(t, branch.name, true)), { dim: true }),
           ])}
     </Box>
   )
@@ -178,6 +180,7 @@ function localActions(ctx: Ctx, branch: GsBranch): Node {
 function remoteRow(ctx: Ctx, branch: GsBranch): Node {
   const { Box, Button } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const id = `rbranch:${branch.name}`
   const isOpen = ctx.nav.expanded === id
   const current = ctx.snap.head?.branch ?? null
@@ -194,17 +197,17 @@ function remoteRow(ctx: Ctx, branch: GsBranch): Node {
         <Box flexDirection="column" marginLeft={4} marginBottom={1}>
           {bar(ctx, [
             hasLocal
-              ? button(ctx, `switch-local:${branch.name}`, `Basculer sur ${localName}`, () => cmd.act(ops.switchBranch(localName)), { primary: true })
-              : button(ctx, `track:${branch.name}`, `Créer ${localName} qui la suit`, () => cmd.act(ops.trackRemote(branch.name, localName)), { primary: true }),
-            button(ctx, `checkout-r:${branch.name}`, 'Checkout (détaché)', () => cmd.act(ops.checkoutDetached(branch.name))),
-            current !== null ? button(ctx, `merge-r:${branch.name}`, `Merge dans ${current}`, () => cmd.act(ops.merge(branch.name, 'ff', current))) : null,
-            current !== null ? button(ctx, `rebase-r:${branch.name}`, `Rebase ${current} dessus`, () => cmd.act(ops.rebase(branch.name, current))) : null,
+              ? button(ctx, `switch-local:${branch.name}`, t.branches.switchTo(localName), () => cmd.act(ops.switchBranch(t, localName)), { primary: true })
+              : button(ctx, `track:${branch.name}`, t.branches.track(localName), () => cmd.act(ops.trackRemote(t, branch.name, localName)), { primary: true }),
+            button(ctx, `checkout-r:${branch.name}`, t.common.checkoutDetached, () => cmd.act(ops.checkoutDetached(t, branch.name))),
+            current !== null ? button(ctx, `merge-r:${branch.name}`, t.common.mergeInto(current), () => cmd.act(ops.merge(t, branch.name, 'ff', current))) : null,
+            current !== null ? button(ctx, `rebase-r:${branch.name}`, t.common.rebaseOnto(current), () => cmd.act(ops.rebase(t, branch.name, current))) : null,
           ])}
           {bar(ctx, [
-            button(ctx, `log-r:${branch.name}`, 'Historique', () => showHistoryOf(ctx, branch.name), { dim: true }),
-            button(ctx, `tip-r:${branch.name}`, `Dernier commit ${short(branch.sha)}`, () => cmd.jumpToCommit(branch.sha), { dim: true }),
+            button(ctx, `log-r:${branch.name}`, t.common.history, () => showHistoryOf(ctx, branch.name), { dim: true }),
+            button(ctx, `tip-r:${branch.name}`, t.common.lastCommit(short(branch.sha)), () => cmd.jumpToCommit(branch.sha), { dim: true }),
             split !== null
-              ? button(ctx, `delete-r:${branch.name}`, `Supprimer sur ${split[0]}`, () => cmd.act(ops.deleteRemoteBranch(split[0], split[1])), { dim: true })
+              ? button(ctx, `delete-r:${branch.name}`, t.common.deleteOn(split[0]), () => cmd.act(ops.deleteRemoteBranch(t, split[0], split[1])), { dim: true })
               : null,
           ])}
         </Box>
@@ -216,28 +219,29 @@ function remoteRow(ctx: Ctx, branch: GsBranch): Node {
 export function tagsView(ctx: Ctx): Node {
   const { Box, Button, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const remote = defaultRemote(ctx)
   const create = async (): Promise<void> => {
     const name = draft('new-tag').trim()
     if (name === '') {
-      await cmd.inform('Donnez un nom au tag.', 'error')
+      await cmd.inform(t.common.nameTag, 'error')
       return
     }
     const target = draft('new-tag-target').trim() || 'HEAD'
-    if (await cmd.act(ops.createTag(name, target, draft('new-tag-msg')))) clearDrafts('new-tag', 'new-tag-target', 'new-tag-msg')
+    if (await cmd.act(ops.createTag(t, name, target, draft('new-tag-msg')))) clearDrafts('new-tag', 'new-tag-target', 'new-tag-msg')
   }
 
   return (
     <Box flexDirection="column">
       {bar(ctx, [
-        field(ctx, 'new-tag', { label: 'Nouveau tag', placeholder: 'v1.2.3', submitLabel: 'créer', onSubmit: () => create() }),
-        field(ctx, 'new-tag-target', { label: 'sur', placeholder: 'HEAD', submitLabel: 'créer', onSubmit: () => create() }),
-        field(ctx, 'new-tag-msg', { placeholder: 'message (tag annoté, optionnel)', submitLabel: 'créer', onSubmit: () => create() }),
-        button(ctx, 'new-tag-create', 'Créer le tag', () => create(), { primary: true }),
-        remote !== null ? button(ctx, 'push-tags', `Pousser tous les tags vers ${remote}`, () => cmd.act(ops.pushAllTags(remote)), { dim: true }) : null,
+        field(ctx, 'new-tag', { label: t.tags.newTag, placeholder: 'v1.2.3', submitLabel: t.common.createSubmit, onSubmit: () => create() }),
+        field(ctx, 'new-tag-target', { label: t.tags.on, placeholder: 'HEAD', submitLabel: t.common.createSubmit, onSubmit: () => create() }),
+        field(ctx, 'new-tag-msg', { placeholder: t.common.tagMessage, submitLabel: t.common.createSubmit, onSubmit: () => create() }),
+        button(ctx, 'new-tag-create', t.common.createTag, () => create(), { primary: true }),
+        remote !== null ? button(ctx, 'push-tags', t.tags.pushAll(remote), () => cmd.act(ops.pushAllTags(t, remote)), { dim: true }) : null,
       ])}
-      {section(ctx, `Tags (${ctx.snap.tags.length})`)}
-      {ctx.snap.tags.length === 0 ? note(ctx, 'Aucun tag.') : null}
+      {section(ctx, t.tags.list(ctx.snap.tags.length))}
+      {ctx.snap.tags.length === 0 ? note(ctx, t.tags.none) : null}
       {ctx.snap.tags.map(tag => {
         const id = `tag:${tag.name}`
         const isOpen = ctx.nav.expanded === id
@@ -250,7 +254,7 @@ export function tagsView(ctx: Ctx): Node {
               </Text>{' '}
               <Text dimColor>
                 {tag.annotated ? '◆ ' : ''}
-                {short(tag.sha)} · {cut(line(tag.subject), Math.max(10, ctx.width - tag.name.length - 30))} · {ago(tag.time)}
+                {short(tag.sha)} · {cut(line(tag.subject), Math.max(10, ctx.width - tag.name.length - 30))} · {ago(t, tag.time)}
               </Text>
             </Button>
             {isOpen ? (
@@ -268,29 +272,30 @@ export function tagsView(ctx: Ctx): Node {
 function tagActions(ctx: Ctx, tag: GsTag, remote: string | null): Node {
   const { Box } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const branchFrom = async (): Promise<void> => {
     const name = draft(`tag-branch:${tag.name}`).trim()
     if (name === '') {
-      await cmd.inform('Donnez un nom à la branche.', 'error')
+      await cmd.inform(t.common.nameBranch, 'error')
       return
     }
-    if (await cmd.act(ops.createBranch(name, tag.name, true))) clearDrafts(`tag-branch:${tag.name}`)
+    if (await cmd.act(ops.createBranch(t, name, tag.name, true))) clearDrafts(`tag-branch:${tag.name}`)
   }
   return (
     <Box flexDirection="column">
       {bar(ctx, [
-        button(ctx, `tag-checkout:${tag.name}`, 'Checkout (détaché)', () => cmd.act(ops.checkoutDetached(tag.name)), { primary: true }),
-        button(ctx, `tag-commit:${tag.name}`, 'Voir le commit', () => cmd.jumpToCommit(tag.sha)),
-        remote !== null ? button(ctx, `tag-push:${tag.name}`, `Pousser vers ${remote}`, () => cmd.act(ops.pushTag(tag.name, remote))) : null,
+        button(ctx, `tag-checkout:${tag.name}`, t.common.checkoutDetached, () => cmd.act(ops.checkoutDetached(t, tag.name)), { primary: true }),
+        button(ctx, `tag-commit:${tag.name}`, t.tags.showCommit, () => cmd.jumpToCommit(tag.sha)),
+        remote !== null ? button(ctx, `tag-push:${tag.name}`, t.tags.pushTo(remote), () => cmd.act(ops.pushTag(t, tag.name, remote))) : null,
       ])}
       {bar(ctx, [
-        field(ctx, `tag-branch:${tag.name}`, { label: 'Branche depuis ce tag', placeholder: 'hotfix/…', submitLabel: 'créer', onSubmit: () => branchFrom() }),
-        button(ctx, `tag-branch-go:${tag.name}`, 'Créer et basculer', () => branchFrom(), { dim: true }),
+        field(ctx, `tag-branch:${tag.name}`, { label: t.tags.branchFrom, placeholder: 'hotfix/…', submitLabel: t.common.createSubmit, onSubmit: () => branchFrom() }),
+        button(ctx, `tag-branch-go:${tag.name}`, t.common.createAndSwitch, () => branchFrom(), { dim: true }),
       ])}
       {bar(ctx, [
-        button(ctx, `tag-delete:${tag.name}`, 'Supprimer', () => cmd.act(ops.deleteTag(tag.name)), { dim: true }),
+        button(ctx, `tag-delete:${tag.name}`, t.common.delete, () => cmd.act(ops.deleteTag(t, tag.name)), { dim: true }),
         remote !== null
-          ? button(ctx, `tag-delete-remote:${tag.name}`, `Supprimer sur ${remote}`, () => cmd.act(ops.deleteRemoteTag(tag.name, remote)), { dim: true })
+          ? button(ctx, `tag-delete-remote:${tag.name}`, t.common.deleteOn(remote), () => cmd.act(ops.deleteRemoteTag(t, tag.name, remote)), { dim: true })
           : null,
       ])}
     </Box>

@@ -26,7 +26,7 @@ const ROW_LIMIT = 300
 
 function rows(ctx: Ctx, kind: Kind, entries: GsStatusEntry[]): Node[] {
   const drawn: Node[] = entries.slice(0, ROW_LIMIT).map(entry => fileRow(ctx, kind, entry))
-  if (entries.length > ROW_LIMIT) drawn.push(note(ctx, `… et ${entries.length - ROW_LIMIT} autres (voir la console : git status)`))
+  if (entries.length > ROW_LIMIT) drawn.push(note(ctx, ctx.t.status.more(entries.length - ROW_LIMIT)))
   return drawn
 }
 
@@ -38,48 +38,46 @@ export function statusView(ctx: Ctx): Node {
   const unstaged = entries.filter(entry => entry.kind === 'tracked' && entry.y !== '.')
   const untracked = entries.filter(entry => entry.kind === 'untracked')
   const cmd = ctx.cmd
+  const t = ctx.t
 
   return (
     <Box flexDirection="column">
       {commitBox(ctx, staged.length)}
       {conflicts.length > 0
         ? [
-            section(ctx, `Conflits (${conflicts.length})`, [
-              button(ctx, 'conflicts-claude', 'Résoudre avec Claude', () =>
-                cmd.askClaude(`Résous les conflits git en cours dans ${ctx.snap.head?.root ?? 'ce dépôt'} (fichiers : ${conflicts
-                    .map(entry => entry.path)
-                    .join(', ')}). Explique chaque choix, puis marque les fichiers résolus avec git add, sans continuer l'opération.`,
-                ),
+            section(ctx, t.status.conflicts(conflicts.length), [
+              button(ctx, 'conflicts-claude', t.common.resolveWithClaude, () =>
+                cmd.askClaude(t.claude.resolveConflicts(ctx.snap.head?.root, conflicts.map(entry => entry.path))),
               ),
             ]),
             ...rows(ctx, 'c', conflicts),
           ]
         : null}
-      {section(ctx, `Indexés (${staged.length})`, staged.length > 0 ? [button(ctx, 'unstage-all', 'Tout désindexer', () => cmd.act(ops.unstageAll()), { dim: true })] : [])}
+      {section(ctx, t.status.staged(staged.length), staged.length > 0 ? [button(ctx, 'unstage-all', t.status.unstageAll, () => cmd.act(ops.unstageAll(t)), { dim: true })] : [])}
       {rows(ctx, 's', staged)}
       {section(
         ctx,
-        `Modifiés (${unstaged.length})`,
+        t.status.modified(unstaged.length),
         unstaged.length > 0
           ? [
-              button(ctx, 'stage-tracked', 'Tout indexer', () => cmd.act(ops.stage(unstaged.map(entry => entry.path))), { dim: true }),
-              button(ctx, 'discard-all', 'Tout annuler', () => cmd.act(ops.discardAll()), { dim: true }),
+              button(ctx, 'stage-tracked', t.status.stageAll, () => cmd.act(ops.stage(t, unstaged.map(entry => entry.path))), { dim: true }),
+              button(ctx, 'discard-all', t.status.discardAll, () => cmd.act(ops.discardAll(t)), { dim: true }),
             ]
           : [],
       )}
       {rows(ctx, 'u', unstaged)}
       {section(
         ctx,
-        `Non suivis (${untracked.length})`,
+        t.status.untracked(untracked.length),
         untracked.length > 0
           ? [
-              button(ctx, 'stage-all', 'Tout ajouter', () => cmd.act(ops.stageAll()), { dim: true }),
-              button(ctx, 'clean-all', 'Tout supprimer', () => cmd.act(ops.cleanAll()), { dim: true }),
+              button(ctx, 'stage-all', t.status.addAll, () => cmd.act(ops.stageAll(t)), { dim: true }),
+              button(ctx, 'clean-all', t.status.deleteAll, () => cmd.act(ops.cleanAll(t)), { dim: true }),
             ]
           : [],
       )}
       {rows(ctx, '?', untracked)}
-      {entries.length === 0 ? note(ctx, 'Rien à commiter : la copie de travail est propre.') : null}
+      {entries.length === 0 ? note(ctx, t.status.clean) : null}
     </Box>
   )
 }
@@ -87,6 +85,7 @@ export function statusView(ctx: Ctx): Node {
 function commitBox(ctx: Ctx, stagedCount: number): Node {
   const { Box, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const head = ctx.snap.head
   const pushStep = pushStepForHead(ctx)
 
@@ -95,43 +94,41 @@ function commitBox(ctx: Ctx, stagedCount: number): Node {
     const body = fromFieldText(draft('commit-body')).trim()
     const message = body === '' ? subject : `${subject}\n\n${body}`
     if (!options.amend && subject === '') {
-      await cmd.inform('Écrivez un message de commit.', 'error')
+      await cmd.inform(t.status.writeMessage, 'error')
       return
     }
     if (!options.amend && !options.all && stagedCount === 0) {
-      await cmd.inform("Rien n'est indexé : indexez des fichiers, ou utilisez « Commit tout (-a) ».", 'error')
+      await cmd.inform(t.status.nothingStaged, 'error')
       return
     }
-    const isOk = await cmd.act(ops.commit(message, options))
+    const isOk = await cmd.act(ops.commit(t, message, options))
     if (isOk) clearDrafts('commit-msg', 'commit-body')
   }
 
   return (
     <Box flexDirection="column">
       <Text bold>
-        Commit{head?.branch ? ` sur ${line(head.branch)}` : ''} <Text dimColor>({stagedCount} indexé{stagedCount > 1 ? 's' : ''})</Text>
+        {t.status.commitTo(head?.branch ? line(head.branch) : null)} <Text dimColor>{t.status.stagedCount(stagedCount)}</Text>
       </Text>
       {field(ctx, 'commit-msg', {
-        label: 'Sujet',
-        placeholder: 'Message de commit (Entrée pour commiter)',
-        submitLabel: 'commit',
+        label: t.status.subject,
+        placeholder: t.status.subjectPlaceholder,
+        submitLabel: t.status.commitSubmit,
         onSubmit: () => commit({}),
       })}
       {field(ctx, 'commit-body', {
-        label: 'Description',
-        placeholder: 'Optionnelle (⏎ pour un saut de ligne)',
-        submitLabel: 'commit',
+        label: t.status.body,
+        placeholder: t.status.bodyPlaceholder,
+        submitLabel: t.status.commitSubmit,
         onSubmit: () => commit({}),
       })}
       {bar(ctx, [
-        button(ctx, 'commit', 'Commit', () => commit({}), { primary: true }),
-        button(ctx, 'commit-all', 'Commit tout (-a)', () => commit({ all: true })),
-        button(ctx, 'commit-amend', 'Amender le dernier', () => commit({ amend: true })),
-        pushStep ? button(ctx, 'commit-push', 'Commit + push', () => commit({ push: pushStep })) : null,
-        button(ctx, 'commit-ai', '✨ Message par Claude', () => cmd.suggestCommitMessage()),
-        button(ctx, 'commit-review', 'Revue par Claude', () =>
-          cmd.askClaude('Fais une revue de code des changements indexés (git diff --cached) de ce dépôt : bugs, risques, améliorations.'),
-        ),
+        button(ctx, 'commit', t.status.commit, () => commit({}), { primary: true }),
+        button(ctx, 'commit-all', t.status.commitAll, () => commit({ all: true })),
+        button(ctx, 'commit-amend', t.status.amend, () => commit({ amend: true })),
+        pushStep ? button(ctx, 'commit-push', t.status.commitPush, () => commit({ push: pushStep })) : null,
+        button(ctx, 'commit-ai', t.status.claudeMessage, () => cmd.suggestCommitMessage()),
+        button(ctx, 'commit-review', t.status.claudeReview, () => cmd.askClaude(t.claude.review)),
       ])}
     </Box>
   )
@@ -147,6 +144,7 @@ function letterOf(kind: Kind, entry: GsStatusEntry): string {
 function fileRow(ctx: Ctx, kind: Kind, entry: GsStatusEntry): Node {
   const { Box, Button, Text } = ctx.ui
   const cmd = ctx.cmd
+  const t = ctx.t
   const id = `${kind}:${entry.path}`
   const isOpen = ctx.nav.file === id
   const letter = letterOf(kind, entry)
@@ -155,22 +153,22 @@ function fileRow(ctx: Ctx, kind: Kind, entry: GsStatusEntry): Node {
   const hunks: HunkAction[] = []
 
   if (kind === 's') {
-    actions.push(button(ctx, `unstage:${entry.path}`, '−', () => cmd.act(ops.unstage(entry.orig ? [entry.path, entry.orig] : [entry.path])), { dim: true }))
-    hunks.push({ key: `unstage-hunk:${entry.path}`, label: 'Désindexer ce hunk', run: patch => cmd.act(ops.unstageHunk(patch)) })
+    actions.push(button(ctx, `unstage:${entry.path}`, '−', () => cmd.act(ops.unstage(t, entry.orig ? [entry.path, entry.orig] : [entry.path])), { dim: true }))
+    hunks.push({ key: `unstage-hunk:${entry.path}`, label: t.status.unstageHunk, run: patch => cmd.act(ops.unstageHunk(t, patch)) })
   } else if (kind === 'u') {
-    actions.push(button(ctx, `stage:${entry.path}`, '+', () => cmd.act(ops.stage([entry.path])), { dim: true }))
-    actions.push(button(ctx, `discard:${entry.path}`, '↺', () => cmd.act(ops.discard(entry.path)), { dim: true }))
-    hunks.push({ key: `stage-hunk:${entry.path}`, label: 'Indexer ce hunk', run: patch => cmd.act(ops.stageHunk(patch)) })
-    hunks.push({ key: `discard-hunk:${entry.path}`, label: 'Annuler ce hunk', run: patch => cmd.act(ops.discardHunk(patch)) })
+    actions.push(button(ctx, `stage:${entry.path}`, '+', () => cmd.act(ops.stage(t, [entry.path])), { dim: true }))
+    actions.push(button(ctx, `discard:${entry.path}`, '↺', () => cmd.act(ops.discard(t, entry.path)), { dim: true }))
+    hunks.push({ key: `stage-hunk:${entry.path}`, label: t.status.stageHunk, run: patch => cmd.act(ops.stageHunk(t, patch)) })
+    hunks.push({ key: `discard-hunk:${entry.path}`, label: t.status.discardHunk, run: patch => cmd.act(ops.discardHunk(t, patch)) })
   } else if (kind === '?') {
-    actions.push(button(ctx, `add:${entry.path}`, '+', () => cmd.act(ops.stage([entry.path])), { dim: true }))
-    actions.push(button(ctx, `remove:${entry.path}`, '✕', () => cmd.act(ops.removeUntracked(entry.path)), { dim: true }))
+    actions.push(button(ctx, `add:${entry.path}`, '+', () => cmd.act(ops.stage(t, [entry.path])), { dim: true }))
+    actions.push(button(ctx, `remove:${entry.path}`, '✕', () => cmd.act(ops.removeUntracked(t, entry.path)), { dim: true }))
   } else {
-    actions.push(button(ctx, `ours:${entry.path}`, 'Garder la courante', () => cmd.act(ops.takeOurs(entry.path)), { dim: true }))
-    actions.push(button(ctx, `theirs:${entry.path}`, "Prendre l'entrante", () => cmd.act(ops.takeTheirs(entry.path)), { dim: true }))
-    actions.push(button(ctx, `resolved:${entry.path}`, 'Marquer résolu', () => cmd.act(ops.markResolved(entry.path)), { dim: true }))
+    actions.push(button(ctx, `ours:${entry.path}`, t.status.keepCurrent, () => cmd.act(ops.takeOurs(t, entry.path)), { dim: true }))
+    actions.push(button(ctx, `theirs:${entry.path}`, t.status.takeIncoming, () => cmd.act(ops.takeTheirs(t, entry.path)), { dim: true }))
+    actions.push(button(ctx, `resolved:${entry.path}`, t.status.markResolved, () => cmd.act(ops.markResolved(t, entry.path)), { dim: true }))
     if (entry.x === 'D' || entry.y === 'D') {
-      actions.push(button(ctx, `rm:${entry.path}`, 'Supprimer', () => cmd.act(ops.removeConflicted(entry.path)), { dim: true }))
+      actions.push(button(ctx, `rm:${entry.path}`, t.common.delete, () => cmd.act(ops.removeConflicted(t, entry.path)), { dim: true }))
     }
   }
 

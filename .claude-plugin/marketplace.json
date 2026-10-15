@@ -7,8 +7,8 @@
     {
       "name": "git-studio",
       "source": "./",
-      "description": "Client git complet : graphe des commits, staging par hunk, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick, console git."
+      "description": "A complete git client: commit graph, hunk staging, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick, git console, in English or French."
     }
   ],
-  "description": "Git Studio : un client git complet dans un panneau de Claude Code."
+  "description": "Git Studio: a complete git client in a Claude Code pane."
 }

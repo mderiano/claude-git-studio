@@ -4,7 +4,7 @@
 
 Un client git complet dans un panneau de Claude Code, dans le terminal comme dans l’app de bureau : le graphe des commits, le statut avec staging par hunk, les branches, les tags, les worktrees, le stash, les remotes et le reflog, avec merge, rebase, cherry-pick, reset, bisect et une console pour tout le reste.
 
-L’interface du panneau est en français.
+L’interface du panneau existe en anglais et en français : l’option `language` choisit (`en` par défaut, `fr` pour le français, voir [Langue](#langue)).
 
 ## Ouvrir
 
@@ -40,7 +40,7 @@ Dans une session Claude Code lancée dans un terminal :
 /plugin install git-studio --marketplace mderiano/claude-git-studio
 ```
 
-Réponds `y` pour ajouter la marketplace, puis choisis la portée « user » pour l’avoir dans toutes tes sessions (terminal et app de bureau).
+Réponds `y` pour ajouter la marketplace, puis choisis la portée « user » pour l’avoir dans toutes tes sessions (terminal et app de bureau), et la langue de l’interface.
 
 Ou en ligne de commande :
 
@@ -50,6 +50,22 @@ claude plugin install git-studio@claude-git-studio --scope user
 ```
 
 Mettre à jour : `claude plugin marketplace update claude-git-studio`, puis `claude plugin update git-studio@claude-git-studio` et `/reload-plugins` dans une session ouverte.
+
+### Langue
+
+L’interface est en anglais par défaut. Pour la passer en français (`fr`) ou revenir à l’anglais (`en`), dans Claude Code :
+
+```
+/plugin configure git-studio@claude-git-studio
+```
+
+Ou en ligne de commande, puis `/reload-plugins` dans une session ouverte :
+
+```sh
+echo '{"language":"fr"}' | claude plugin configure git-studio@claude-git-studio --values-stdin
+```
+
+### Prérequis
 
 Il faut Claude Code 2.1.295 ou plus récent (`claude update`), car le plugin utilise l’API des hooks de fonctions (encore en accès anticipé), et git 2.35 ou plus récent.
 

@@ -1,6 +1,7 @@
 import type { GsNavPatch, GsOp, GsOperation, GsStep } from '../types'
+import type { Messages } from './i18n'
 
-/** Each function names one git action as data: what a button runs, and what it asks first. */
+/** Each function names one git action as data: what a button runs, and what it asks first, in the strings `t` holds. */
 
 const step = (...args: string[]): GsStep => ({ args })
 
@@ -12,61 +13,59 @@ const short = (sha: string): string => sha.slice(0, 7)
 
 // Working tree and index
 
-export const stage = (paths: string[]): GsOp =>
-  op(paths.length === 1 ? `Indexer ${paths[0]}` : `Indexer ${paths.length} fichiers`, [step('add', '--', ...paths)])
+export const stage = (t: Messages, paths: string[]): GsOp => op(t.ops.stage(paths), [step('add', '--', ...paths)])
 
-export const stageAll = (): GsOp => op('Tout indexer', [step('add', '-A')])
+export const stageAll = (t: Messages): GsOp => op(t.ops.stageAll, [step('add', '-A')])
 
-export const unstage = (paths: string[]): GsOp =>
-  op(paths.length === 1 ? `Désindexer ${paths[0]}` : `Désindexer ${paths.length} fichiers`, [step('reset', '-q', '--', ...paths)])
+export const unstage = (t: Messages, paths: string[]): GsOp => op(t.ops.unstage(paths), [step('reset', '-q', '--', ...paths)])
 
-export const unstageAll = (): GsOp => op('Tout désindexer', [step('reset', '-q')])
+export const unstageAll = (t: Messages): GsOp => op(t.ops.unstageAll, [step('reset', '-q')])
 
-export const discard = (path: string): GsOp =>
-  op(`Annuler les modifications de ${path}`, [step('restore', '--worktree', '--', path)], {
-    danger: `Annuler définitivement les modifications non indexées de ${path} ?`,
+export const discard = (t: Messages, path: string): GsOp =>
+  op(t.ops.discard(path), [step('restore', '--worktree', '--', path)], {
+    danger: t.ops.discardDanger(path),
   })
 
-export const discardAll = (): GsOp =>
-  op('Annuler toutes les modifications', [step('restore', '--worktree', '--', ':/')], {
-    danger: 'Annuler définitivement toutes les modifications non indexées des fichiers suivis ?',
+export const discardAll = (t: Messages): GsOp =>
+  op(t.ops.discardAll, [step('restore', '--worktree', '--', ':/')], {
+    danger: t.ops.discardAllDanger,
   })
 
-export const removeUntracked = (path: string): GsOp =>
-  op(`Supprimer ${path}`, [step('clean', '-f', '-d', '--', path)], {
-    danger: `Supprimer définitivement le fichier non suivi ${path} ?`,
+export const removeUntracked = (t: Messages, path: string): GsOp =>
+  op(t.ops.removeUntracked(path), [step('clean', '-f', '-d', '--', path)], {
+    danger: t.ops.removeUntrackedDanger(path),
   })
 
-export const cleanAll = (): GsOp =>
-  op('Supprimer les fichiers non suivis', [step('clean', '-f', '-d')], {
-    danger: 'Supprimer définitivement tous les fichiers non suivis (les fichiers ignorés sont gardés) ?',
+export const cleanAll = (t: Messages): GsOp =>
+  op(t.ops.cleanAll, [step('clean', '-f', '-d')], {
+    danger: t.ops.cleanAllDanger,
   })
 
-export const takeOurs = (path: string): GsOp =>
-  op(`Garder la version courante de ${path}`, [step('checkout', '--ours', '--', path), step('add', '--', path)])
+export const takeOurs = (t: Messages, path: string): GsOp =>
+  op(t.ops.takeOurs(path), [step('checkout', '--ours', '--', path), step('add', '--', path)])
 
-export const takeTheirs = (path: string): GsOp =>
-  op(`Prendre la version entrante de ${path}`, [step('checkout', '--theirs', '--', path), step('add', '--', path)])
+export const takeTheirs = (t: Messages, path: string): GsOp =>
+  op(t.ops.takeTheirs(path), [step('checkout', '--theirs', '--', path), step('add', '--', path)])
 
-export const markResolved = (path: string): GsOp => op(`Marquer ${path} résolu`, [step('add', '--', path)])
+export const markResolved = (t: Messages, path: string): GsOp => op(t.ops.markResolved(path), [step('add', '--', path)])
 
-export const removeConflicted = (path: string): GsOp =>
-  op(`Supprimer ${path}`, [step('rm', '-q', '--', path)], { danger: `Résoudre le conflit en supprimant ${path} ?` })
+export const removeConflicted = (t: Messages, path: string): GsOp =>
+  op(t.ops.removeConflicted(path), [step('rm', '-q', '--', path)], { danger: t.ops.removeConflictedDanger(path) })
 
-export const stageHunk = (patch: string): GsOp =>
-  op('Indexer le hunk', [{ args: ['apply', '--cached', '--whitespace=nowarn', '-'], stdin: patch }])
+export const stageHunk = (t: Messages, patch: string): GsOp =>
+  op(t.ops.stageHunk, [{ args: ['apply', '--cached', '--whitespace=nowarn', '-'], stdin: patch }])
 
-export const unstageHunk = (patch: string): GsOp =>
-  op('Désindexer le hunk', [{ args: ['apply', '--cached', '-R', '--whitespace=nowarn', '-'], stdin: patch }])
+export const unstageHunk = (t: Messages, patch: string): GsOp =>
+  op(t.ops.unstageHunk, [{ args: ['apply', '--cached', '-R', '--whitespace=nowarn', '-'], stdin: patch }])
 
-export const discardHunk = (patch: string): GsOp =>
-  op('Annuler le hunk', [{ args: ['apply', '-R', '--whitespace=nowarn', '-'], stdin: patch }], {
-    danger: 'Annuler définitivement ce hunk dans le fichier ?',
+export const discardHunk = (t: Messages, patch: string): GsOp =>
+  op(t.ops.discardHunk, [{ args: ['apply', '-R', '--whitespace=nowarn', '-'], stdin: patch }], {
+    danger: t.ops.discardHunkDanger,
   })
 
 export type CommitOptions = { amend?: boolean; all?: boolean; push?: GsStep | null }
 
-export function commit(message: string, options: CommitOptions = {}): GsOp {
+export function commit(t: Messages, message: string, options: CommitOptions = {}): GsOp {
   const args = ['commit']
   if (options.all) args.push('-a')
   if (options.amend) args.push('--amend')
@@ -74,7 +73,7 @@ export function commit(message: string, options: CommitOptions = {}): GsOp {
   else args.push('--no-edit')
   const steps = [{ args }]
   if (options.push) steps.push(options.push)
-  const title = options.amend ? 'Amender le dernier commit' : options.push ? 'Commit et push' : 'Commit'
+  const title = options.amend ? t.ops.amend : options.push ? t.ops.commitPush : t.ops.commit
   return op(title, steps, options.push ? { network: true } : {})
 }
 
@@ -89,65 +88,65 @@ const OPERATION_NAME: Record<GsOperation, string> = {
   bisect: 'bisect',
 }
 
-export const continueOperation = (operation: GsOperation): GsOp =>
-  op(`Continuer le ${OPERATION_NAME[operation]}`, [step(OPERATION_NAME[operation], '--continue')])
+export const continueOperation = (t: Messages, operation: GsOperation): GsOp =>
+  op(t.ops.continueOperation(OPERATION_NAME[operation]), [step(OPERATION_NAME[operation], '--continue')])
 
-export const abortOperation = (operation: GsOperation): GsOp =>
+export const abortOperation = (t: Messages, operation: GsOperation): GsOp =>
   operation === 'bisect'
-    ? op('Terminer le bisect', [step('bisect', 'reset')])
-    : op(`Abandonner le ${OPERATION_NAME[operation]}`, [step(OPERATION_NAME[operation], '--abort')], {
-        danger: `Abandonner le ${OPERATION_NAME[operation]} en cours et revenir à l'état d'avant ?`,
+    ? op(t.ops.endBisect, [step('bisect', 'reset')])
+    : op(t.ops.abortOperation(OPERATION_NAME[operation]), [step(OPERATION_NAME[operation], '--abort')], {
+        danger: t.ops.abortOperationDanger(OPERATION_NAME[operation]),
       })
 
-export const skipOperation = (operation: GsOperation): GsOp =>
+export const skipOperation = (t: Messages, operation: GsOperation): GsOp =>
   operation === 'bisect'
-    ? op('Bisect : passer ce commit', [step('bisect', 'skip')])
-    : op(`Passer le commit courant du ${OPERATION_NAME[operation]}`, [step(OPERATION_NAME[operation], '--skip')], {
-        danger: `Passer (abandonner) le commit en cours d'application du ${OPERATION_NAME[operation]} ?`,
+    ? op(t.ops.bisectSkip, [step('bisect', 'skip')])
+    : op(t.ops.skipOperation(OPERATION_NAME[operation]), [step(OPERATION_NAME[operation], '--skip')], {
+        danger: t.ops.skipOperationDanger(OPERATION_NAME[operation]),
       })
 
-export const bisectMark = (verdict: 'good' | 'bad', sha: string | null, isBisecting: boolean): GsOp => {
+export const bisectMark = (t: Messages, verdict: 'good' | 'bad', sha: string | null, isBisecting: boolean): GsOp => {
   const steps: GsStep[] = isBisecting ? [] : [step('bisect', 'start')]
   steps.push(sha === null ? step('bisect', verdict) : step('bisect', verdict, sha))
-  return op(`Bisect : ${verdict === 'good' ? 'bon' : 'mauvais'}${sha ? ` (${short(sha)})` : ''}`, steps)
+  return op(t.ops.bisectMark(verdict, sha === null ? null : short(sha)), steps)
 }
 
 // Commits
 
-export const checkoutDetached = (ref: string): GsOp =>
-  op(`Checkout ${/^[0-9a-f]{40,64}$/.test(ref) ? short(ref) : ref} (HEAD détachée)`, [step('checkout', '--detach', ref)])
+export const checkoutDetached = (t: Messages, ref: string): GsOp =>
+  op(t.ops.checkoutDetached(/^[0-9a-f]{40,64}$/.test(ref) ? short(ref) : ref), [step('checkout', '--detach', ref)])
 
-export function createBranch(name: string, start: string, checkout: boolean): GsOp {
+export function createBranch(t: Messages, name: string, start: string, checkout: boolean): GsOp {
   const steps = checkout ? [step('checkout', '-b', name, start)] : [step('branch', name, start)]
-  return op(`Créer la branche ${name}${checkout ? ' et basculer dessus' : ''}`, steps)
+  return op(t.ops.createBranch(name, checkout), steps)
 }
 
-export function createTag(name: string, target: string, message: string): GsOp {
+export function createTag(t: Messages, name: string, target: string, message: string): GsOp {
   const args = message.trim() === '' ? ['tag', name, target] : ['tag', '-a', name, '-m', message, target]
-  return op(`Créer le tag ${name}`, [{ args }])
+  return op(t.ops.createTag(name), [{ args }])
 }
 
 /** Commits oldest first; merges take their first parent as mainline. */
-export function cherryPick(shas: string[], hasMerge: boolean): GsOp {
+export function cherryPick(t: Messages, shas: string[], hasMerge: boolean): GsOp {
   const args = ['cherry-pick', ...(hasMerge ? ['-m', '1'] : []), ...shas]
-  return op(shas.length === 1 ? `Cherry-pick ${short(shas[0] ?? '')}` : `Cherry-pick de ${shas.length} commits`, [{ args }])
+  return op(t.ops.cherryPick(shas.length, short(shas[0] ?? '')), [{ args }])
 }
 
-export function revert(shas: string[], hasMerge: boolean): GsOp {
+export function revert(t: Messages, shas: string[], hasMerge: boolean): GsOp {
   const args = ['revert', '--no-edit', ...(hasMerge ? ['-m', '1'] : []), ...shas]
-  return op(shas.length === 1 ? `Revert ${short(shas[0] ?? '')}` : `Revert de ${shas.length} commits`, [{ args }])
+  return op(t.ops.revert(shas.length, short(shas[0] ?? '')), [{ args }])
 }
 
-export function reset(target: string, mode: 'soft' | 'mixed' | 'hard', branch: string | null): GsOp {
+export function reset(t: Messages, target: string, mode: 'soft' | 'mixed' | 'hard', branch: string | null): GsOp {
   const where = branch ?? 'HEAD'
-  return op(`Reset ${mode} de ${where} sur ${short(target)}`, [step('reset', `--${mode}`, target)], mode === 'hard'
-    ? { danger: `Reset --hard de ${where} sur ${short(target)} : les modifications non commitées seront perdues. Continuer ?` }
+  return op(t.ops.reset(mode, where, short(target)), [step('reset', `--${mode}`, target)], mode === 'hard'
+    ? { danger: t.ops.resetHardDanger(where, short(target)) }
     : {})
 }
 
 export type MergeMode = 'ff' | 'no-ff' | 'ff-only' | 'squash'
 
-export function merge(ref: string, mode: MergeMode, into: string | null): GsOp {
+export function merge(t: Messages, ref: string, mode: MergeMode, into: string | null): GsOp {
   const flags: Record<MergeMode, string[]> = {
     ff: ['--no-edit'],
     'no-ff': ['--no-ff', '--no-edit'],
@@ -155,46 +154,44 @@ export function merge(ref: string, mode: MergeMode, into: string | null): GsOp {
     squash: ['--squash'],
   }
   const label = /^[0-9a-f]{40,64}$/.test(ref) ? short(ref) : ref
-  return op(`Merge ${mode === 'ff' ? '' : `${mode} `}de ${label} dans ${into ?? 'HEAD'}`, [step('merge', ...flags[mode], ref)])
+  return op(t.ops.merge(label, mode === 'ff' ? null : mode, into ?? 'HEAD'), [step('merge', ...flags[mode], ref)])
 }
 
-export const rebase = (onto: string, branch: string | null): GsOp => {
+export const rebase = (t: Messages, onto: string, branch: string | null): GsOp => {
   const label = /^[0-9a-f]{40,64}$/.test(onto) ? short(onto) : onto
-  return op(`Rebase de ${branch ?? 'HEAD'} sur ${label}`, [step('rebase', onto)], {
-    danger: `Rebase de ${branch ?? 'HEAD'} sur ${label} : l'historique de ${branch ?? 'HEAD'} sera réécrit. Continuer ?`,
+  return op(t.ops.rebase(branch ?? 'HEAD', label), [step('rebase', onto)], {
+    danger: t.ops.rebaseDanger(branch ?? 'HEAD', label),
   })
 }
 
 // Branches
 
-export const switchBranch = (name: string): GsOp => op(`Basculer sur ${name}`, [step('checkout', name)])
+export const switchBranch = (t: Messages, name: string): GsOp => op(t.ops.switchBranch(name), [step('checkout', name)])
 
-export const trackRemote = (remoteBranch: string, local: string): GsOp =>
-  op(`Créer ${local} qui suit ${remoteBranch}`, [step('checkout', '-b', local, '--track', remoteBranch)])
+export const trackRemote = (t: Messages, remoteBranch: string, local: string): GsOp =>
+  op(t.ops.trackRemote(local, remoteBranch), [step('checkout', '-b', local, '--track', remoteBranch)])
 
-export const renameBranch = (from: string, to: string): GsOp =>
-  op(`Renommer ${from} en ${to}`, [step('branch', '-m', from, to)], { then: { expanded: `branch:${to}` } })
+export const renameBranch = (t: Messages, from: string, to: string): GsOp =>
+  op(t.ops.renameBranch(from, to), [step('branch', '-m', from, to)], { then: { expanded: `branch:${to}` } })
 
-export const deleteBranch = (name: string, force: boolean): GsOp =>
-  op(`Supprimer la branche ${name}`, [step('branch', force ? '-D' : '-d', name)], {
-    danger: force
-      ? `Forcer la suppression de la branche ${name}, même si elle n'est pas fusionnée ?`
-      : `Supprimer la branche ${name} ?`,
+export const deleteBranch = (t: Messages, name: string, force: boolean): GsOp =>
+  op(t.ops.deleteBranch(name), [step('branch', force ? '-D' : '-d', name)], {
+    danger: t.ops.deleteBranchDanger(name, force),
     then: { expanded: null },
   })
 
-export const deleteRemoteBranch = (remote: string, branch: string): GsOp =>
-  op(`Supprimer ${remote}/${branch}`, [step('push', remote, '--delete', branch)], {
-    danger: `Supprimer la branche ${branch} sur le remote ${remote} ?`,
+export const deleteRemoteBranch = (t: Messages, remote: string, branch: string): GsOp =>
+  op(t.ops.deleteRemoteBranch(remote, branch), [step('push', remote, '--delete', branch)], {
+    danger: t.ops.deleteRemoteBranchDanger(remote, branch),
     network: true,
     then: { expanded: null },
   })
 
-export const setUpstream = (branch: string, upstream: string): GsOp =>
-  op(`Suivre ${upstream} depuis ${branch}`, [step('branch', `--set-upstream-to=${upstream}`, branch)])
+export const setUpstream = (t: Messages, branch: string, upstream: string): GsOp =>
+  op(t.ops.setUpstream(branch, upstream), [step('branch', `--set-upstream-to=${upstream}`, branch)])
 
-export const unsetUpstream = (branch: string): GsOp =>
-  op(`Retirer l'upstream de ${branch}`, [step('branch', '--unset-upstream', branch)])
+export const unsetUpstream = (t: Messages, branch: string): GsOp =>
+  op(t.ops.unsetUpstream(branch), [step('branch', '--unset-upstream', branch)])
 
 export type PushOptions = { setUpstream?: boolean; force?: boolean; tags?: boolean }
 
@@ -208,130 +205,132 @@ export function pushStep(remote: string, branch: string | null, options: PushOpt
   return { args }
 }
 
-export function push(remote: string, branch: string | null, options: PushOptions = {}): GsOp {
-  const target = branch === null ? remote : `${branch} vers ${remote}`
-  return op(`${options.force ? 'Push forcé' : 'Push'} de ${target}`, [pushStep(remote, branch, options)], {
+export function push(t: Messages, remote: string, branch: string | null, options: PushOptions = {}): GsOp {
+  const target = branch === null ? remote : t.ops.pushTarget(branch, remote)
+  return op(t.ops.push(target, options.force === true), [pushStep(remote, branch, options)], {
     network: true,
-    ...(options.force ? { danger: `Push forcé (--force-with-lease) de ${target} : l'historique distant sera réécrit. Continuer ?` } : {}),
+    ...(options.force ? { danger: t.ops.pushDanger(target) } : {}),
   })
 }
 
+/** Pushes the checked-out branch with the step `pushStepForHead` chose. */
+export const pushHead = (t: Messages, headStep: GsStep, branch: string | null): GsOp =>
+  op(t.ops.push(branch ?? 'HEAD', false), [headStep], { network: true })
+
 export type PullMode = 'default' | 'ff-only' | 'rebase' | 'merge'
 
-export const pull = (mode: PullMode): GsOp => {
+export const pull = (t: Messages, mode: PullMode): GsOp => {
   const flags: Record<PullMode, string[]> = { default: [], 'ff-only': ['--ff-only'], rebase: ['--rebase'], merge: ['--no-rebase'] }
-  return op(mode === 'default' ? 'Pull' : `Pull (${mode})`, [step('pull', ...flags[mode])], { network: true })
+  return op(t.ops.pull(mode === 'default' ? null : mode), [step('pull', ...flags[mode])], { network: true })
 }
 
-export const fetch = (remote: string | null): GsOp =>
-  op(remote === null ? 'Fetch de tous les remotes' : `Fetch ${remote}`, [
+export const fetch = (t: Messages, remote: string | null): GsOp =>
+  op(remote === null ? t.ops.fetchAll : t.ops.fetch(remote), [
     remote === null ? step('fetch', '--all', '--prune') : step('fetch', '--prune', remote),
   ], { network: true })
 
 /** Fast-forwards a branch that is not checked out to its upstream. */
-export const fastForward = (branch: string, remote: string, remoteBranch: string): GsOp =>
-  op(`Mettre à jour ${branch} depuis ${remote}/${remoteBranch}`, [step('fetch', remote, `${remoteBranch}:${branch}`)], {
+export const fastForward = (t: Messages, branch: string, remote: string, remoteBranch: string): GsOp =>
+  op(t.ops.fastForward(branch, `${remote}/${remoteBranch}`), [step('fetch', remote, `${remoteBranch}:${branch}`)], {
     network: true,
   })
 
 // Tags
 
-export const deleteTag = (name: string): GsOp =>
-  op(`Supprimer le tag ${name}`, [step('tag', '-d', name)], { danger: `Supprimer le tag local ${name} ?`, then: { expanded: null } })
+export const deleteTag = (t: Messages, name: string): GsOp =>
+  op(t.ops.deleteTag(name), [step('tag', '-d', name)], { danger: t.ops.deleteTagDanger(name), then: { expanded: null } })
 
-export const pushTag = (name: string, remote: string): GsOp =>
-  op(`Push du tag ${name} vers ${remote}`, [step('push', remote, `refs/tags/${name}`)], { network: true })
+export const pushTag = (t: Messages, name: string, remote: string): GsOp =>
+  op(t.ops.pushTag(name, remote), [step('push', remote, `refs/tags/${name}`)], { network: true })
 
-export const pushAllTags = (remote: string): GsOp =>
-  op(`Push de tous les tags vers ${remote}`, [step('push', remote, '--tags')], { network: true })
+export const pushAllTags = (t: Messages, remote: string): GsOp =>
+  op(t.ops.pushAllTags(remote), [step('push', remote, '--tags')], { network: true })
 
-export const deleteRemoteTag = (name: string, remote: string): GsOp =>
-  op(`Supprimer le tag ${name} sur ${remote}`, [step('push', remote, '--delete', `refs/tags/${name}`)], {
-    danger: `Supprimer le tag ${name} sur le remote ${remote} ?`,
+export const deleteRemoteTag = (t: Messages, name: string, remote: string): GsOp =>
+  op(t.ops.deleteRemoteTag(name, remote), [step('push', remote, '--delete', `refs/tags/${name}`)], {
+    danger: t.ops.deleteRemoteTagDanger(name, remote),
     network: true,
   })
 
 // Worktrees
 
-export function addWorktree(path: string, newBranch: string, ref: string): GsOp {
+export function addWorktree(t: Messages, path: string, newBranch: string, ref: string): GsOp {
   const args = ['worktree', 'add']
   if (newBranch !== '') args.push('-b', newBranch)
   args.push(path)
   if (ref !== '') args.push(ref)
-  return op(`Créer le worktree ${path}`, [{ args }])
+  return op(t.ops.addWorktree(path), [{ args }])
 }
 
-export const removeWorktree = (path: string, force: boolean): GsOp =>
-  op(`Supprimer le worktree ${path}`, [step('worktree', 'remove', ...(force ? ['--force'] : []), path)], {
-    danger: force
-      ? `Forcer la suppression du worktree ${path}, modifications non commitées comprises ?`
-      : `Supprimer le worktree ${path} ?`,
+export const removeWorktree = (t: Messages, path: string, force: boolean): GsOp =>
+  op(t.ops.removeWorktree(path), [step('worktree', 'remove', ...(force ? ['--force'] : []), path)], {
+    danger: t.ops.removeWorktreeDanger(path, force),
     then: { expanded: null },
   })
 
-export const lockWorktree = (path: string, lock: boolean): GsOp =>
-  op(`${lock ? 'Verrouiller' : 'Déverrouiller'} ${path}`, [step('worktree', lock ? 'lock' : 'unlock', path)])
+export const lockWorktree = (t: Messages, path: string, lock: boolean): GsOp =>
+  op(t.ops.lockWorktree(path, lock), [step('worktree', lock ? 'lock' : 'unlock', path)])
 
-export const moveWorktree = (path: string, to: string): GsOp =>
-  op(`Déplacer le worktree vers ${to}`, [step('worktree', 'move', path, to)], { then: { expanded: `worktree:${to}` } })
+export const moveWorktree = (t: Messages, path: string, to: string): GsOp =>
+  op(t.ops.moveWorktree(to), [step('worktree', 'move', path, to)], { then: { expanded: `worktree:${to}` } })
 
-export const pruneWorktrees = (): GsOp => op('Nettoyer les worktrees orphelins', [step('worktree', 'prune', '-v')])
+export const pruneWorktrees = (t: Messages): GsOp => op(t.ops.pruneWorktrees, [step('worktree', 'prune', '-v')])
 
 // Stash
 
 export type StashMode = 'default' | 'untracked' | 'keep-index' | 'staged'
 
-export function stashPush(message: string, mode: StashMode): GsOp {
+export function stashPush(t: Messages, message: string, mode: StashMode): GsOp {
   const args = ['stash', 'push']
   if (mode === 'untracked') args.push('--include-untracked')
   if (mode === 'keep-index') args.push('--keep-index')
   if (mode === 'staged') args.push('--staged')
   if (message.trim() !== '') args.push('-m', message)
-  return op('Stash des modifications', [{ args }])
+  return op(t.ops.stashPush, [{ args }])
 }
 
-export const stashApply = (ref: string): GsOp => op(`Appliquer ${ref}`, [step('stash', 'apply', ref)])
+export const stashApply = (t: Messages, ref: string): GsOp => op(t.ops.stashApply(ref), [step('stash', 'apply', ref)])
 
-export const stashPop = (ref: string): GsOp => op(`Pop ${ref}`, [step('stash', 'pop', ref)], { then: { expanded: null } })
+export const stashPop = (t: Messages, ref: string): GsOp => op(t.ops.stashPop(ref), [step('stash', 'pop', ref)], { then: { expanded: null } })
 
-export const stashDrop = (ref: string): GsOp =>
-  op(`Supprimer ${ref}`, [step('stash', 'drop', ref)], { danger: `Supprimer définitivement ${ref} ?`, then: { expanded: null } })
+export const stashDrop = (t: Messages, ref: string): GsOp =>
+  op(t.ops.stashDrop(ref), [step('stash', 'drop', ref)], { danger: t.ops.stashDropDanger(ref), then: { expanded: null } })
 
-export const stashBranch = (name: string, ref: string): GsOp =>
-  op(`Créer la branche ${name} depuis ${ref}`, [step('stash', 'branch', name, ref)], { then: { expanded: null } })
+export const stashBranch = (t: Messages, name: string, ref: string): GsOp =>
+  op(t.ops.stashBranch(name, ref), [step('stash', 'branch', name, ref)], { then: { expanded: null } })
 
-export const stashClear = (): GsOp =>
-  op('Supprimer tous les stashes', [step('stash', 'clear')], { danger: 'Supprimer définitivement tous les stashes ?' })
+export const stashClear = (t: Messages): GsOp =>
+  op(t.ops.stashClear, [step('stash', 'clear')], { danger: t.ops.stashClearDanger })
 
 // Remotes
 
-export const addRemote = (name: string, url: string): GsOp => op(`Ajouter le remote ${name}`, [step('remote', 'add', name, url)])
+export const addRemote = (t: Messages, name: string, url: string): GsOp => op(t.ops.addRemote(name), [step('remote', 'add', name, url)])
 
-export const removeRemote = (name: string): GsOp =>
-  op(`Supprimer le remote ${name}`, [step('remote', 'remove', name)], {
-    danger: `Supprimer le remote ${name} et ses branches distantes locales ?`,
+export const removeRemote = (t: Messages, name: string): GsOp =>
+  op(t.ops.removeRemote(name), [step('remote', 'remove', name)], {
+    danger: t.ops.removeRemoteDanger(name),
     then: { expanded: null },
   })
 
-export const renameRemote = (from: string, to: string): GsOp =>
-  op(`Renommer le remote ${from} en ${to}`, [step('remote', 'rename', from, to)], { then: { expanded: `remote:${to}` } })
+export const renameRemote = (t: Messages, from: string, to: string): GsOp =>
+  op(t.ops.renameRemote(from, to), [step('remote', 'rename', from, to)], { then: { expanded: `remote:${to}` } })
 
-export const setRemoteUrl = (name: string, url: string): GsOp =>
-  op(`Changer l'URL de ${name}`, [step('remote', 'set-url', name, url)])
+export const setRemoteUrl = (t: Messages, name: string, url: string): GsOp =>
+  op(t.ops.setRemoteUrl(name), [step('remote', 'set-url', name, url)])
 
-export const pruneRemote = (name: string): GsOp =>
-  op(`Nettoyer les branches supprimées de ${name}`, [step('remote', 'prune', name)], { network: true })
+export const pruneRemote = (t: Messages, name: string): GsOp =>
+  op(t.ops.pruneRemote(name), [step('remote', 'prune', name)], { network: true })
 
 // Repository
 
-export const init = (): GsOp => op('Initialiser un dépôt git', [step('init')])
+export const init = (t: Messages): GsOp => op(t.ops.init, [step('init')])
 
-export const clone = (url: string, dest: string): GsOp =>
-  op(`Cloner ${url}`, [dest === '' ? step('clone', url) : step('clone', url, dest)], { network: true })
+export const clone = (t: Messages, url: string, dest: string): GsOp =>
+  op(t.ops.clone(url), [dest === '' ? step('clone', url) : step('clone', url, dest)], { network: true })
 
 export const withThen = (operation: GsOp, then: GsNavPatch): GsOp => ({ ...operation, then: { ...operation.then, ...then } })
 
-export const restoreFile = (sha: string, path: string): GsOp =>
-  op(`Restaurer ${path} depuis ${short(sha)}`, [step('checkout', sha, '--', path)], {
-    danger: `Remplacer ${path} dans la copie de travail (et l'index) par sa version du commit ${short(sha)} ?`,
+export const restoreFile = (t: Messages, sha: string, path: string): GsOp =>
+  op(t.ops.restoreFile(path, short(sha)), [step('checkout', sha, '--', path)], {
+    danger: t.ops.restoreFileDanger(path, short(sha)),
   })

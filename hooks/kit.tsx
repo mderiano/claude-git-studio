@@ -29,6 +29,7 @@ import type {
 } from '../types'
 import { draft, setDraft } from './drafts'
 import { hunkPatch, parseRefs, splitDiff } from './git'
+import type { Messages } from './i18n'
 
 /** What a helper draws: an element, a string, or nothing. */
 export type Node = RenderNode | null
@@ -87,6 +88,8 @@ export type Actions = {
 export type Ctx = {
   cmd: Actions
   ui: UI
+  /** The strings of the language the plugin's options name. */
+  t: Messages
   width: number
   surface: RenderSurface
   nav: GsNav
@@ -118,30 +121,27 @@ export function cut(text: string, max: number): string {
 
 export const short = (sha: string): string => sha.slice(0, 7)
 
-export function ago(unixSeconds: number): string {
+export function ago(t: Messages, unixSeconds: number): string {
   if (unixSeconds <= 0) return ''
   const seconds = Math.max(0, Math.floor(Date.now() / 1000 - unixSeconds))
-  if (seconds < 60) return "à l'instant"
+  if (seconds < 60) return t.time.now
   const minutes = Math.floor(seconds / 60)
-  if (minutes < 60) return `${minutes} min`
+  if (minutes < 60) return t.time.minutes(minutes)
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours} h`
+  if (hours < 24) return t.time.hours(hours)
   const days = Math.floor(hours / 24)
-  if (days < 7) return `${days} j`
-  if (days < 31) return `${Math.floor(days / 7)} sem`
-  if (days < 365) return `${Math.floor(days / 30.44)} mois`
-  const years = Math.floor(days / 365.25)
-  return `${years} an${years > 1 ? 's' : ''}`
+  if (days < 7) return t.time.days(days)
+  if (days < 31) return t.time.weeks(Math.floor(days / 7))
+  if (days < 365) return t.time.months(Math.floor(days / 30.44))
+  return t.time.years(Math.floor(days / 365.25))
 }
 
-export function date(unixSeconds: number): string {
+export function date(t: Messages, unixSeconds: number): string {
   if (unixSeconds <= 0) return ''
   const when = new Date(unixSeconds * 1000)
   const pad = (n: number): string => String(n).padStart(2, '0')
-  return `${pad(when.getDate())}/${pad(when.getMonth() + 1)}/${when.getFullYear()} ${pad(when.getHours())}:${pad(when.getMinutes())}`
+  return t.time.date(pad(when.getDate()), pad(when.getMonth() + 1), when.getFullYear(), `${pad(when.getHours())}:${pad(when.getMinutes())}`)
 }
-
-export const plural = (count: number, word: string): string => `${count} ${word}${count > 1 ? 's' : ''}`
 
 /** A theme color per lane, so lanes follow the person's theme. */
 export const LANE_COLORS = ['claude', 'suggestion', 'success', 'warning', 'merged', 'permission', 'planMode'] as const
@@ -154,7 +154,7 @@ export function guard(ctx: Ctx, run: () => unknown): Promise<void> {
     try {
       await run()
     } catch (error) {
-      await ctx.cmd.inform(`Erreur : ${error instanceof Error ? error.message : String(error)}`, 'error')
+      await ctx.cmd.inform(ctx.t.ui.error(error instanceof Error ? error.message : String(error)), 'error')
     }
   })()
 }
@@ -198,7 +198,7 @@ export type FieldOptions = {
 /** A text field whose text lives in the drafts, so redraws keep what was typed. */
 export function field(ctx: Ctx, id: string, options: FieldOptions): Node {
   const { Input, Text } = ctx.ui
-  if (Input === null) return <Text dimColor>(saisie indisponible sur cette surface)</Text>
+  if (Input === null) return <Text dimColor>{ctx.t.ui.noInput}</Text>
   const props: InputProps = {
     key: `in:${id}`,
     value: draft(id, options.initial ?? ''),
@@ -300,8 +300,8 @@ export type HunkAction = { key: string; label: string; run: (patch: string) => u
 /** The diff whose key is `key` once loaded: per file, its hunks, each with optional actions. */
 export function diffView(ctx: Ctx, diff: GsDiff | null, key: string, actions: HunkAction[] = []): Node {
   const { Box, Code, Text } = ctx.ui
-  if (diff === null || diff.key !== key) return <Text dimColor>Chargement du diff…</Text>
-  if (diff.text.trim() === '') return <Text dimColor>(aucune différence textuelle)</Text>
+  if (diff === null || diff.key !== key) return <Text dimColor>{ctx.t.ui.loadingDiff}</Text>
+  if (diff.text.trim() === '') return <Text dimColor>{ctx.t.ui.noDiff}</Text>
   const files = splitDiff(block(diff.text))
   const hasHunks = files.some(file => file.hunks.length > 0)
   if (!hasHunks) return <Code source={block(diff.text)} />
@@ -329,7 +329,7 @@ export function diffView(ctx: Ctx, diff: GsDiff | null, key: string, actions: Hu
               ))}
         </Box>
       ))}
-      {diff.truncated ? <Text dimColor>… diff tronqué (trop long pour le panneau)</Text> : null}
+      {diff.truncated ? <Text dimColor>{ctx.t.ui.diffTruncated}</Text> : null}
     </Box>
   )
 }

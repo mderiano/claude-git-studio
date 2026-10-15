@@ -25,6 +25,7 @@ import {
   splitDiff,
 } from '../hooks/git'
 import { buildGraph, graphText } from '../hooks/graph'
+import { en } from '../hooks/i18n'
 import * as ops from '../hooks/ops'
 import { FIXTURES, MERGE_SHA, PLAIN_SHA, ROOT } from './fixtures'
 
@@ -142,23 +143,23 @@ describe('parsers on real git output', () => {
 
 describe('operations', () => {
   test('dangerous ones ask first, safe ones do not', () => {
-    expect(ops.deleteBranch('x', false).danger).toBeDefined()
-    expect(ops.reset('a'.repeat(40), 'hard', 'main').danger).toBeDefined()
-    expect(ops.reset('a'.repeat(40), 'soft', 'main').danger).toBeUndefined()
-    expect(ops.cherryPick(['a'.repeat(40)], false).danger).toBeUndefined()
-    expect(ops.push('origin', 'main', { force: true }).danger).toBeDefined()
+    expect(ops.deleteBranch(en, 'x', false).danger).toBeDefined()
+    expect(ops.reset(en, 'a'.repeat(40), 'hard', 'main').danger).toBeDefined()
+    expect(ops.reset(en, 'a'.repeat(40), 'soft', 'main').danger).toBeUndefined()
+    expect(ops.cherryPick(en, ['a'.repeat(40)], false).danger).toBeUndefined()
+    expect(ops.push(en, 'origin', 'main', { force: true }).danger).toBeDefined()
   })
 
   test('each builds the git command it names', () => {
-    expect(ops.cherryPick(['a', 'b'], true).steps[0]?.args).toEqual(['cherry-pick', '-m', '1', 'a', 'b'])
-    expect(ops.merge('feature', 'no-ff', 'main').steps[0]?.args).toEqual(['merge', '--no-ff', '--no-edit', 'feature'])
-    expect(ops.createTag('v1', 'HEAD', 'Release').steps[0]?.args).toEqual(['tag', '-a', 'v1', '-m', 'Release', 'HEAD'])
-    expect(ops.createTag('v1', 'HEAD', ' ').steps[0]?.args).toEqual(['tag', 'v1', 'HEAD'])
-    expect(ops.addWorktree('../x', 'feat', 'main').steps[0]?.args).toEqual(['worktree', 'add', '-b', 'feat', '../x', 'main'])
-    expect(ops.commit('msg', { amend: true }).steps[0]?.args).toEqual(['commit', '--amend', '-m', 'msg'])
-    expect(ops.commit('', { amend: true }).steps[0]?.args).toEqual(['commit', '--amend', '--no-edit'])
-    expect(ops.stashPush('wip', 'untracked').steps[0]?.args).toEqual(['stash', 'push', '--include-untracked', '-m', 'wip'])
-    expect(ops.fastForward('dev', 'origin', 'dev').steps[0]?.args).toEqual(['fetch', 'origin', 'dev:dev'])
-    expect(ops.stageHunk('patch').steps[0]).toEqual({ args: ['apply', '--cached', '--whitespace=nowarn', '-'], stdin: 'patch' })
+    expect(ops.cherryPick(en, ['a', 'b'], true).steps[0]?.args).toEqual(['cherry-pick', '-m', '1', 'a', 'b'])
+    expect(ops.merge(en, 'feature', 'no-ff', 'main').steps[0]?.args).toEqual(['merge', '--no-ff', '--no-edit', 'feature'])
+    expect(ops.createTag(en, 'v1', 'HEAD', 'Release').steps[0]?.args).toEqual(['tag', '-a', 'v1', '-m', 'Release', 'HEAD'])
+    expect(ops.createTag(en, 'v1', 'HEAD', ' ').steps[0]?.args).toEqual(['tag', 'v1', 'HEAD'])
+    expect(ops.addWorktree(en, '../x', 'feat', 'main').steps[0]?.args).toEqual(['worktree', 'add', '-b', 'feat', '../x', 'main'])
+    expect(ops.commit(en, 'msg', { amend: true }).steps[0]?.args).toEqual(['commit', '--amend', '-m', 'msg'])
+    expect(ops.commit(en, '', { amend: true }).steps[0]?.args).toEqual(['commit', '--amend', '--no-edit'])
+    expect(ops.stashPush(en, 'wip', 'untracked').steps[0]?.args).toEqual(['stash', 'push', '--include-untracked', '-m', 'wip'])
+    expect(ops.fastForward(en, 'dev', 'origin', 'dev').steps[0]?.args).toEqual(['fetch', 'origin', 'dev:dev'])
+    expect(ops.stageHunk(en, 'patch').steps[0]).toEqual({ args: ['apply', '--cached', '--whitespace=nowarn', '-'], stdin: 'patch' })
   })
 })
