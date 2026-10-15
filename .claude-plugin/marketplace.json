@@ -1,0 +1,14 @@
+{
+  "name": "claude-git-studio",
+  "owner": {
+    "name": "Mathieu Deriano"
+  },
+  "plugins": [
+    {
+      "name": "git-studio",
+      "source": "./",
+      "description": "Client git complet : graphe des commits, staging par hunk, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick, console git."
+    }
+  ],
+  "description": "Git Studio : un client git complet dans un panneau de Claude Code."
+}

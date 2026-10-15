@@ -1,0 +1,22 @@
+{
+  "name": "git-studio",
+  "version": "0.1.0",
+  "description": "Client git complet dans un panneau Claude Code : graphe des commits, statut et staging par hunk, branches, tags, worktrees, stash, remotes, reflog, merge, rebase, cherry-pick, console git.",
+  "types": "./types/index.d.ts",
+  "author": {
+    "name": "Mathieu Deriano"
+  },
+  "homepage": "https://github.com/mderiano/claude-git-studio",
+  "repository": "https://github.com/mderiano/claude-git-studio",
+  "license": "MIT",
+  "keywords": [
+    "git",
+    "git-client",
+    "commit-graph",
+    "branches",
+    "worktrees",
+    "cherry-pick",
+    "stash",
+    "rebase"
+  ]
+}
